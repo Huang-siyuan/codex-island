@@ -1,10 +1,12 @@
 import Foundation
 
 public struct CompletionNotificationRequest: Sendable, Equatable {
+    public let provider: ProviderKind
     public let threadID: String
     public let threadTitle: String
 
-    public init(threadID: String, threadTitle: String) {
+    public init(provider: ProviderKind, threadID: String, threadTitle: String) {
+        self.provider = provider
         self.threadID = threadID
         self.threadTitle = threadTitle
     }
@@ -21,56 +23,58 @@ public struct PollingResult: Sendable, Equatable {
 }
 
 public actor PollingEngine {
-    private let trackedThreadLimit = 3
-    private let parser: LogsEventParser
-    private let previewParser: SessionPreviewParser
     private let coordinator: SessionCoordinator
-    private let store: CodexStateStore
-    private var lastSeenLogIDByThread: [String: Int64]
+    private let providers: [any SessionProvider]
 
     public init(
-        parser: LogsEventParser = LogsEventParser(),
-        previewParser: SessionPreviewParser = SessionPreviewParser(),
         coordinator: SessionCoordinator = SessionCoordinator(),
-        store: CodexStateStore = CodexStateStore(),
-        lastSeenLogIDByThread: [String: Int64] = [:]
+        providers: [any SessionProvider] = [
+            CodexSessionProvider(),
+            ClaudeCodeSessionProvider(),
+            CodeBuddySessionProvider(),
+        ]
     ) {
-        self.parser = parser
-        self.previewParser = previewParser
         self.coordinator = coordinator
-        self.store = store
-        self.lastSeenLogIDByThread = lastSeenLogIDByThread
+        self.providers = providers
     }
 
     public func pollOnce() -> PollingResult {
         do {
-            let threads = try store.fetchRecentThreads()
-            coordinator.apply(threadSnapshots: threads)
+            for provider in providers {
+                let result = try provider.poll()
+                coordinator.apply(threadSnapshots: result.threadSnapshots)
+                coordinator.apply(messagePreviews: result.messagePreviews)
+                coordinator.apply(logEvents: result.logEvents)
 
-            let trackedThreads = Array(threads.prefix(trackedThreadLimit))
-            let afterIDsByThread = trackedThreads.reduce(into: [String: Int64]()) { partialResult, thread in
-                partialResult[thread.threadID] = lastSeenLogIDByThread[thread.threadID] ?? 0
-            }
-            let fetchedRows = try store.fetchLogRows(afterIDsByThread: afterIDsByThread)
-            let rowsByThread = Dictionary(grouping: fetchedRows, by: { $0.threadID ?? "" })
+                let timestamps = Dictionary(grouping: result.logEvents, by: \.sessionKey)
+                    .compactMapValues { events in
+                        events.map(\.timestamp).max()
+                    }
 
-            for thread in trackedThreads {
-                let rows = rowsByThread[thread.threadID] ?? []
-                if let newestRow = rows.last {
-                    lastSeenLogIDByThread[thread.threadID] = newestRow.id
-                    coordinator.recordActivity(
-                        threadID: thread.threadID,
-                        timestamp: Date(timeIntervalSince1970: TimeInterval(newestRow.timestamp))
-                    )
+                for snapshot in result.threadSnapshots {
+                    if let timestamp = timestamps[snapshot.sessionKey] ?? result.messagePreviews
+                        .filter({ $0.sessionKey == snapshot.sessionKey })
+                        .map(\.timestamp)
+                        .max() {
+                        coordinator.recordActivity(
+                            provider: snapshot.provider,
+                            threadID: snapshot.threadID,
+                            timestamp: timestamp
+                        )
+                    }
                 }
-                coordinator.apply(messagePreviews: rows.compactMap(previewParser.parse(row:)))
-                coordinator.apply(logEvents: rows.compactMap(parser.parse(row:)))
             }
 
             let snapshot = coordinator.currentSnapshot
             let completionNotification = snapshot.shouldNotifyCompletion
-                ? snapshot.primaryThreadID.map {
-                    CompletionNotificationRequest(threadID: $0, threadTitle: snapshot.threadTitle)
+                ? snapshot.activeProvider.flatMap { provider in
+                    snapshot.primaryThreadID.map {
+                        CompletionNotificationRequest(
+                            provider: provider,
+                            threadID: $0,
+                            threadTitle: snapshot.threadTitle
+                        )
+                    }
                 }
                 : nil
             return PollingResult(snapshot: snapshot, completionNotification: completionNotification)
@@ -82,17 +86,22 @@ public actor PollingEngine {
         }
     }
 
+    public func consumeCompletionNotification(for provider: ProviderKind, threadID: String) {
+        coordinator.consumeCompletionNotification(for: provider, threadID: threadID)
+    }
+
     public func consumeCompletionNotification(for threadID: String) {
         coordinator.consumeCompletionNotification(for: threadID)
     }
 
     private func fallbackSnapshot(errorDescription: String) -> IslandSnapshot {
         IslandSnapshot(
+            activeProvider: nil,
             primaryThreadID: nil,
             threadTitle: "Codex Island",
-            statusText: "Waiting for Codex",
+            statusText: "Waiting for AI tools",
             latestToolSummary: errorDescription,
-            sourceLabel: "Codex",
+            sourceLabel: "AI Tools",
             activeSessionCount: 0,
             sessionPreviews: [],
             shouldNotifyCompletion: false

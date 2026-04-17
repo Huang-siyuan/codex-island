@@ -12,6 +12,7 @@ public final class SessionIndexReader {
 
         return entries.map {
             ThreadSnapshot(
+                provider: .codex,
                 threadID: $0.threadID,
                 title: $0.title,
                 source: "discovered",

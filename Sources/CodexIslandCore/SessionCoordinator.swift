@@ -25,24 +25,25 @@ public final class SessionCoordinator {
 
     public func apply(threadSnapshots: [ThreadSnapshot]) {
         for snapshot in threadSnapshots {
-            self.threadSnapshots[snapshot.threadID] = snapshot
+            self.threadSnapshots[snapshot.sessionKey] = snapshot
         }
     }
 
     public func apply(logEvents: [CodexLogEvent]) {
         for event in logEvents {
-            latestLogEvents[event.threadID] = event
-            latestActivityTimestamps[event.threadID] = max(latestActivityTimestamps[event.threadID] ?? .distantPast, event.timestamp)
+            let key = event.sessionKey
+            latestLogEvents[key] = event
+            latestActivityTimestamps[key] = max(latestActivityTimestamps[key] ?? .distantPast, event.timestamp)
 
             switch event.kind {
             case .responseCompleted:
-                if completionCandidates[event.threadID] == nil {
-                    completionCandidates[event.threadID] = event.timestamp
+                if completionCandidates[key] == nil {
+                    completionCandidates[key] = event.timestamp
                 }
             case .responseCreated, .responseInProgress, .toolStarted, .toolUpdated, .toolCompleted:
-                if let completionCandidate = completionCandidates[event.threadID], event.timestamp >= completionCandidate {
-                    completionCandidates.removeValue(forKey: event.threadID)
-                    deliveredCompletionCandidates.removeValue(forKey: event.threadID)
+                if let completionCandidate = completionCandidates[key], event.timestamp >= completionCandidate {
+                    completionCandidates.removeValue(forKey: key)
+                    deliveredCompletionCandidates.removeValue(forKey: key)
                 }
             }
         }
@@ -50,69 +51,129 @@ public final class SessionCoordinator {
 
     public func apply(messagePreviews: [SessionMessagePreview]) {
         for preview in messagePreviews {
+            let key = preview.sessionKey
             switch preview.author {
             case .user:
-                if shouldReplacePreview(current: latestUserPreviews[preview.threadID], replacement: preview) {
-                    latestUserPreviews[preview.threadID] = preview
+                if shouldReplacePreview(current: latestUserPreviews[key], replacement: preview) {
+                    latestUserPreviews[key] = preview
                 }
             case .assistant:
-                if shouldReplacePreview(current: latestAssistantPreviews[preview.threadID], replacement: preview) {
-                    latestAssistantPreviews[preview.threadID] = preview
+                if shouldReplacePreview(current: latestAssistantPreviews[key], replacement: preview) {
+                    latestAssistantPreviews[key] = preview
                 }
             }
         }
+    }
+
+    public func recordActivity(provider: ProviderKind, threadID: String, timestamp: Date) {
+        latestActivityTimestamps[SessionIdentity.key(provider: provider, threadID: threadID)] = max(
+            latestActivityTimestamps[SessionIdentity.key(provider: provider, threadID: threadID)] ?? .distantPast,
+            timestamp
+        )
     }
 
     public func recordActivity(threadID: String, timestamp: Date) {
-        latestActivityTimestamps[threadID] = max(latestActivityTimestamps[threadID] ?? .distantPast, timestamp)
+        recordActivity(provider: .codex, threadID: threadID, timestamp: timestamp)
+    }
+
+    public func consumeCompletionNotification(for provider: ProviderKind, threadID: String) {
+        let key = SessionIdentity.key(provider: provider, threadID: threadID)
+        guard let completionCandidate = completionCandidates[key] else {
+            return
+        }
+        deliveredCompletionCandidates[key] = completionCandidate
     }
 
     public func consumeCompletionNotification(for threadID: String) {
-        guard let completionCandidate = completionCandidates[threadID] else {
-            return
-        }
-        deliveredCompletionCandidates[threadID] = completionCandidate
+        consumeCompletionNotification(for: .codex, threadID: threadID)
     }
 
     public var currentSnapshot: IslandSnapshot {
-        let primary = threadSnapshots.values.max(by: { activityDate(for: $0) < activityDate(for: $1) })
-        let event = primary.flatMap { latestLogEvents[$0.threadID] }
+        let primary = primarySnapshot()
+        let primaryKey = primary?.sessionKey
+        let event = primaryKey.flatMap { latestLogEvents[$0] }
         let recentActivity = primary.map(activityDate(for:))
-        let didConfirmCompletion = primary.map { isCompletionConfirmed(for: $0.threadID) } ?? false
-        let sessionPreviews = threadSnapshots.values
+        let activeProvider = primary?.provider
+        let providerSnapshots = activeProvider.map(snapshots(for:)) ?? []
+        let didConfirmCompletion = primary.map { isCompletionConfirmed(for: $0.sessionKey) } ?? false
+        let sessionPreviews = providerSnapshots
             .sorted(by: { activityDate(for: $0) > activityDate(for: $1) })
             .prefix(sessionPreviewLimit)
             .map { snapshot in
-                let threadID = snapshot.threadID
-                let status = statusText(
-                    for: threadID,
-                    event: latestLogEvents[threadID],
-                    recentActivity: activityDate(for: snapshot)
-                )
-
+                let key = snapshot.sessionKey
                 return SessionPreview(
-                    threadID: threadID,
+                    provider: snapshot.provider,
+                    threadID: snapshot.threadID,
                     title: displayTitle(for: snapshot),
-                    statusText: status,
-                    sourceLabel: sourceLabel(for: snapshot.source),
-                    userPreview: latestUserPreviews[threadID]?.text ?? fallbackUserPreview(for: snapshot),
-                    assistantPreview: latestAssistantPreviews[threadID]?.text,
-                    latestToolSummary: latestToolSummary(for: latestLogEvents[threadID]),
+                    statusText: statusText(
+                        provider: snapshot.provider,
+                        sessionKey: key,
+                        event: latestLogEvents[key],
+                        recentActivity: activityDate(for: snapshot)
+                    ),
+                    sourceLabel: snapshot.provider.displayName,
+                    userPreview: latestUserPreviews[key]?.text ?? fallbackUserPreview(for: snapshot),
+                    assistantPreview: latestAssistantPreviews[key]?.text,
+                    latestToolSummary: latestToolSummary(for: latestLogEvents[key]),
                     updatedAt: activityDate(for: snapshot),
-                    isPrimary: threadID == primary?.threadID
+                    isPrimary: key == primaryKey,
+                    navigationTarget: snapshot.navigationTarget
                 )
             }
 
+        let fallbackProvider = activeProvider ?? .codex
         return IslandSnapshot(
+            activeProvider: activeProvider,
             primaryThreadID: primary?.threadID,
-            threadTitle: primary.map(displayTitle(for:)) ?? "No active Codex thread",
-            statusText: statusText(for: primary?.threadID, event: event, recentActivity: recentActivity),
+            threadTitle: primary.map(displayTitle(for:)) ?? "No active AI session",
+            statusText: statusText(
+                provider: fallbackProvider,
+                sessionKey: primaryKey,
+                event: event,
+                recentActivity: recentActivity
+            ),
             latestToolSummary: latestToolSummary(for: event),
-            sourceLabel: sourceLabel(for: primary?.source),
-            activeSessionCount: threadSnapshots.count,
+            sourceLabel: activeProvider?.displayName ?? "AI Tools",
+            activeSessionCount: providerSnapshots.count,
             sessionPreviews: sessionPreviews,
-            shouldNotifyCompletion: didConfirmCompletion && shouldNotifyCompletion(for: primary?.threadID)
+            shouldNotifyCompletion: didConfirmCompletion && shouldNotifyCompletion(for: primaryKey)
         )
+    }
+
+    private func snapshots(for provider: ProviderKind) -> [ThreadSnapshot] {
+        threadSnapshots.values.filter { $0.provider == provider }
+    }
+
+    private func primarySnapshot() -> ThreadSnapshot? {
+        threadSnapshots.values.max { lhs, rhs in
+            let lhsDescriptor = primarySortDescriptor(for: lhs)
+            let rhsDescriptor = primarySortDescriptor(for: rhs)
+            if lhsDescriptor.priority == rhsDescriptor.priority {
+                return lhsDescriptor.activity < rhsDescriptor.activity
+            }
+            return lhsDescriptor.priority < rhsDescriptor.priority
+        }
+    }
+
+    private func primarySortDescriptor(for snapshot: ThreadSnapshot) -> (priority: Int, activity: Date) {
+        let key = snapshot.sessionKey
+        let activity = activityDate(for: snapshot)
+        let priority: Int
+        if isCompletionConfirmed(for: key) {
+            priority = 1
+        } else if let event = latestLogEvents[key] {
+            switch event.kind {
+            case .toolStarted, .toolUpdated:
+                priority = 4
+            case .responseCreated, .responseInProgress, .toolCompleted, .responseCompleted:
+                priority = 3
+            }
+        } else if now().timeIntervalSince(activity) < 5 {
+            priority = 2
+        } else {
+            priority = 0
+        }
+        return (priority, activity)
     }
 
     private func shouldReplacePreview(current: SessionMessagePreview?, replacement: SessionMessagePreview) -> Bool {
@@ -135,15 +196,20 @@ public final class SessionCoordinator {
         return sanitized.isEmpty ? "Untitled session" : sanitized
     }
 
-    private func statusText(for threadID: String?, event: CodexLogEvent?, recentActivity: Date?) -> String {
-        if let threadID, isCompletionConfirmed(for: threadID) {
+    private func statusText(
+        provider: ProviderKind,
+        sessionKey: String?,
+        event: CodexLogEvent?,
+        recentActivity: Date?
+    ) -> String {
+        if let sessionKey, isCompletionConfirmed(for: sessionKey) {
             return "Done"
         }
         guard let event else {
             if let recentActivity, now().timeIntervalSince(recentActivity) < 5 {
                 return "Running"
             }
-            return "Watching Codex"
+            return "Watching \(provider.displayName)"
         }
         switch event.kind {
         case .responseCreated, .responseInProgress, .toolCompleted:
@@ -167,41 +233,35 @@ public final class SessionCoordinator {
         }
     }
 
-    private func sourceLabel(for source: String?) -> String {
-        guard let source, !source.isEmpty else {
-            return "Codex"
-        }
-        return source.capitalized
-    }
-
     private func activityDate(for snapshot: ThreadSnapshot) -> Date {
-        let latestEventDate = latestLogEvents[snapshot.threadID]?.timestamp ?? snapshot.updatedAt
-        let latestActivityDate = latestActivityTimestamps[snapshot.threadID] ?? snapshot.updatedAt
+        let key = snapshot.sessionKey
+        let latestEventDate = latestLogEvents[key]?.timestamp ?? snapshot.updatedAt
+        let latestActivityDate = latestActivityTimestamps[key] ?? snapshot.updatedAt
         return max(snapshot.updatedAt, max(latestEventDate, latestActivityDate))
     }
 
-    private func isCompletionConfirmed(for threadID: String) -> Bool {
-        guard completionCandidates[threadID] != nil else {
+    private func isCompletionConfirmed(for sessionKey: String) -> Bool {
+        guard completionCandidates[sessionKey] != nil else {
             return false
         }
 
-        return now().timeIntervalSince(lastActivity(for: threadID)) >= completionConfirmationDeadline
+        return now().timeIntervalSince(lastActivity(for: sessionKey)) >= completionConfirmationDeadline
     }
 
-    private func lastActivity(for threadID: String) -> Date {
+    private func lastActivity(for sessionKey: String) -> Date {
         max(
-            latestActivityTimestamps[threadID] ?? .distantPast,
-            threadSnapshots[threadID]?.updatedAt ?? .distantPast
+            latestActivityTimestamps[sessionKey] ?? .distantPast,
+            threadSnapshots[sessionKey]?.updatedAt ?? .distantPast
         )
     }
 
-    private func shouldNotifyCompletion(for threadID: String?) -> Bool {
-        guard let threadID,
-              let completionCandidate = completionCandidates[threadID],
-              isCompletionConfirmed(for: threadID) else {
+    private func shouldNotifyCompletion(for sessionKey: String?) -> Bool {
+        guard let sessionKey,
+              let completionCandidate = completionCandidates[sessionKey],
+              isCompletionConfirmed(for: sessionKey) else {
             return false
         }
-        return deliveredCompletionCandidates[threadID] != completionCandidate
+        return deliveredCompletionCandidates[sessionKey] != completionCandidate
     }
 
     private var completionConfirmationDeadline: TimeInterval {

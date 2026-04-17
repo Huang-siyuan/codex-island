@@ -164,6 +164,7 @@ struct IslandRootView: View {
                             Spacer(minLength: 8)
 
                             HStack(spacing: 8) {
+                                badge(text: preview.sourceLabel, color: .white.opacity(0.12))
                                 badge(text: preview.statusText, color: statusColor(for: preview.statusText).opacity(0.2))
                                 badge(text: relativeAgeText(for: preview.updatedAt), color: .white.opacity(0.08))
                             }
@@ -177,8 +178,8 @@ struct IslandRootView: View {
                         }
 
                         if let assistantPreview = preview.assistantPreview ?? preview.latestToolSummary,
-                           !assistantPreview.isEmpty {
-                            Text(assistantPreview)
+                           let renderedAssistantPreview = SessionPreviewMarkdownRenderer.render(assistantPreview) {
+                            Text(renderedAssistantPreview)
                                 .font(.system(size: 13, weight: .regular, design: .monospaced))
                                 .foregroundStyle(Color.white.opacity(0.94))
                                 .lineLimit(2)

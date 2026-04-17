@@ -77,6 +77,7 @@ public struct SessionPreviewParser {
         }
 
         return SessionMessagePreview(
+            provider: .codex,
             threadID: threadID,
             author: .assistant,
             text: text,
@@ -106,6 +107,7 @@ public struct SessionPreviewParser {
         }
 
         return SessionMessagePreview(
+            provider: .codex,
             threadID: threadID,
             author: .user,
             text: text,

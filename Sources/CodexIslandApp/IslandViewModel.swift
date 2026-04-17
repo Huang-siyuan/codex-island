@@ -4,10 +4,10 @@ import Foundation
 
 @MainActor
 final class IslandViewModel: ObservableObject {
-    @Published var threadTitle: String = "Watching Codex"
+    @Published var threadTitle: String = "Watching AI tools"
     @Published var statusText: String = "Starting"
     @Published var latestToolSummary: String?
-    @Published var sourceLabel: String = "Codex"
+    @Published var sourceLabel: String = "AI Tools"
     @Published var activeSessionCount: Int = 0
     @Published var sessionPreviews: [SessionPreview] = []
     @Published var setupMessage: String?
@@ -49,7 +49,7 @@ final class IslandViewModel: ObservableObject {
     }
 
     func openSession(_ preview: SessionPreview) {
-        _ = focusRouter.activateSession(threadID: preview.threadID)
+        _ = focusRouter.activateSession(preview.navigationTarget)
     }
 
     func toggleSoundEnabled() {

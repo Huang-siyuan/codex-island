@@ -13,12 +13,13 @@ public struct LogsEventParser {
             return event
         }
 
-        if let kind = extractFallbackEventKind(from: row.body) {
+        if let fallbackEvent = extractFallbackEvent(from: row.body) {
             return CodexLogEvent(
+                provider: .codex,
                 threadID: threadID,
-                kind: kind,
+                kind: fallbackEvent.kind,
                 toolName: nil,
-                summary: fallbackSummary(for: kind),
+                summary: fallbackEvent.summary,
                 timestamp: Date(timeIntervalSince1970: TimeInterval(row.timestamp))
             )
         }
@@ -36,17 +37,18 @@ public struct LogsEventParser {
 
         switch envelope.type {
         case "response.created":
-            return CodexLogEvent(threadID: threadID, kind: .responseCreated, toolName: nil, summary: "Response created", timestamp: eventTimestamp)
+            return CodexLogEvent(provider: .codex, threadID: threadID, kind: .responseCreated, toolName: nil, summary: "Response created", timestamp: eventTimestamp)
         case "response.in_progress":
-            return CodexLogEvent(threadID: threadID, kind: .responseInProgress, toolName: nil, summary: "Working", timestamp: eventTimestamp)
+            return CodexLogEvent(provider: .codex, threadID: threadID, kind: .responseInProgress, toolName: nil, summary: "Working", timestamp: eventTimestamp)
         case "response.completed":
-            return CodexLogEvent(threadID: threadID, kind: .responseCompleted, toolName: nil, summary: "Completed", timestamp: eventTimestamp)
+            return CodexLogEvent(provider: .codex, threadID: threadID, kind: .responseCompleted, toolName: nil, summary: "Completed", timestamp: eventTimestamp)
         case "response.function_call_arguments.delta", "response.function_call_arguments.done":
             guard let argsEnvelope = try? decoder.decode(FunctionArgsEnvelope.self, from: data) else {
                 return nil
             }
             let command = decodeCommand(from: argsEnvelope.arguments) ?? "Tool call"
             return CodexLogEvent(
+                provider: .codex,
                 threadID: threadID,
                 kind: .toolUpdated,
                 toolName: "exec_command",
@@ -79,6 +81,7 @@ public struct LogsEventParser {
             let command = decodeCommand(from: envelope.item.arguments) ?? "Tool call"
             let kind: CodexLogEventKind = envelopeType == "response.output_item.done" ? .toolCompleted : .toolStarted
             return CodexLogEvent(
+                provider: .codex,
                 threadID: threadID,
                 kind: kind,
                 toolName: envelope.item.name ?? "exec_command",
@@ -87,6 +90,7 @@ public struct LogsEventParser {
             )
         case "message":
             return CodexLogEvent(
+                provider: .codex,
                 threadID: threadID,
                 kind: .responseInProgress,
                 toolName: nil,
@@ -95,6 +99,7 @@ public struct LogsEventParser {
             )
         case "reasoning":
             return CodexLogEvent(
+                provider: .codex,
                 threadID: threadID,
                 kind: .responseInProgress,
                 toolName: nil,
@@ -132,28 +137,33 @@ public struct LogsEventParser {
         return String(body[start...])
     }
 
-    private func extractFallbackEventKind(from body: String) -> CodexLogEventKind? {
+    private func extractFallbackEvent(from body: String) -> (kind: CodexLogEventKind, summary: String)? {
+        if body.contains("needs_follow_up=true") {
+            let summary = body.contains("auto_compact_limit=") ? "Compacting context" : "Preparing follow-up"
+            return (.responseInProgress, summary)
+        }
+
         if let eventName = extractFallbackEventName(from: body) {
             switch eventName {
             case "response.created":
-                return .responseCreated
+                return (.responseCreated, fallbackSummary(for: .responseCreated))
             case "response.in_progress":
-                return .responseInProgress
+                return (.responseInProgress, fallbackSummary(for: .responseInProgress))
             case "response.completed":
-                return .responseCompleted
+                return (.responseCompleted, fallbackSummary(for: .responseCompleted))
             default:
                 break
             }
         }
 
         if body.contains("response.completed") {
-            return .responseCompleted
+            return (.responseCompleted, fallbackSummary(for: .responseCompleted))
         }
         if body.contains("response.in_progress") {
-            return .responseInProgress
+            return (.responseInProgress, fallbackSummary(for: .responseInProgress))
         }
         if body.contains("response.created") {
-            return .responseCreated
+            return (.responseCreated, fallbackSummary(for: .responseCreated))
         }
 
         return nil
