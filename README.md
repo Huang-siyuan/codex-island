@@ -1,5 +1,7 @@
 # Codex Island
 
+English | [简体中文](README.zh-CN.md)
+
 A local macOS companion for Codex, Claude Code CLI, and CodeBuddy.
 
 Codex Island lives at the top of your screen, keeps the active AI coding session visible, and lets you jump back into the tool with one click.
