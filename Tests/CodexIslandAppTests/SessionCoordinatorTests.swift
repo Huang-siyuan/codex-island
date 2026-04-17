@@ -163,3 +163,48 @@ func sessionCoordinatorRequiresStableDoneWindowBeforeConfirmingCompletion() {
     #expect(coordinator.currentSnapshot.statusText == "Tool active")
     #expect(!coordinator.currentSnapshot.shouldNotifyCompletion)
 }
+
+@Test
+func sessionCoordinatorKeepsRunningWhenCompactionFollowUpArrives() {
+    var currentTime = Date(timeIntervalSince1970: 300)
+    let coordinator = SessionCoordinator(
+        now: { currentTime },
+        completionIdleThreshold: 4,
+        completionConfirmationThreshold: 2
+    )
+    let thread = ThreadSnapshot(
+        threadID: "b",
+        title: "New",
+        source: "desktop",
+        cwd: "/tmp/demo",
+        updatedAt: Date(timeIntervalSince1970: 280),
+        firstUserMessage: nil
+    )
+    let completion = CodexLogEvent(
+        threadID: "b",
+        kind: .responseCompleted,
+        toolName: nil,
+        summary: "Completed",
+        timestamp: Date(timeIntervalSince1970: 290)
+    )
+    let compactionFollowUp = CodexLogEvent(
+        threadID: "b",
+        kind: .responseInProgress,
+        toolName: nil,
+        summary: "Compacting context",
+        timestamp: Date(timeIntervalSince1970: 291)
+    )
+
+    coordinator.apply(threadSnapshots: [thread])
+    coordinator.apply(logEvents: [completion])
+
+    currentTime = Date(timeIntervalSince1970: 297)
+    #expect(coordinator.currentSnapshot.statusText == "Done")
+    #expect(coordinator.currentSnapshot.shouldNotifyCompletion)
+
+    coordinator.apply(logEvents: [compactionFollowUp])
+
+    currentTime = Date(timeIntervalSince1970: 299)
+    #expect(coordinator.currentSnapshot.statusText == "Running")
+    #expect(!coordinator.currentSnapshot.shouldNotifyCompletion)
+}

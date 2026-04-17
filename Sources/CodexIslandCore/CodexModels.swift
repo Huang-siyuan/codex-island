@@ -1,5 +1,34 @@
 import Foundation
 
+public enum ProviderKind: String, Sendable, Equatable, CaseIterable {
+    case codex
+    case claudeCode
+    case codeBuddy
+
+    public var displayName: String {
+        switch self {
+        case .codex:
+            return "Codex"
+        case .claudeCode:
+            return "Claude Code"
+        case .codeBuddy:
+            return "CodeBuddy"
+        }
+    }
+}
+
+public enum SessionNavigationTarget: Sendable, Equatable {
+    case codex(threadID: String)
+    case claudeCode(sessionID: String, workingDirectory: String?)
+    case codeBuddy(conversationID: String, workingDirectory: String?)
+}
+
+public enum SessionIdentity {
+    public static func key(provider: ProviderKind, threadID: String) -> String {
+        "\(provider.rawValue):\(threadID)"
+    }
+}
+
 public struct SessionIndexEntry: Sendable, Equatable {
     public let threadID: String
     public let title: String
@@ -13,6 +42,7 @@ public struct SessionIndexEntry: Sendable, Equatable {
 }
 
 public struct ThreadSnapshot: Sendable, Equatable {
+    public let provider: ProviderKind
     public let threadID: String
     public let title: String
     public let source: String
@@ -20,13 +50,37 @@ public struct ThreadSnapshot: Sendable, Equatable {
     public let updatedAt: Date
     public let firstUserMessage: String?
 
-    public init(threadID: String, title: String, source: String, cwd: String?, updatedAt: Date, firstUserMessage: String? = nil) {
+    public init(
+        provider: ProviderKind = .codex,
+        threadID: String,
+        title: String,
+        source: String,
+        cwd: String?,
+        updatedAt: Date,
+        firstUserMessage: String? = nil
+    ) {
+        self.provider = provider
         self.threadID = threadID
         self.title = title
         self.source = source
         self.cwd = cwd
         self.updatedAt = updatedAt
         self.firstUserMessage = firstUserMessage
+    }
+
+    public var sessionKey: String {
+        SessionIdentity.key(provider: provider, threadID: threadID)
+    }
+
+    public var navigationTarget: SessionNavigationTarget {
+        switch provider {
+        case .codex:
+            return .codex(threadID: threadID)
+        case .claudeCode:
+            return .claudeCode(sessionID: threadID, workingDirectory: cwd)
+        case .codeBuddy:
+            return .codeBuddy(conversationID: threadID, workingDirectory: cwd)
+        }
     }
 }
 
@@ -60,18 +114,31 @@ public enum CodexLogEventKind: String, Sendable, Equatable {
 }
 
 public struct CodexLogEvent: Sendable, Equatable {
+    public let provider: ProviderKind
     public let threadID: String
     public let kind: CodexLogEventKind
     public let toolName: String?
     public let summary: String
     public let timestamp: Date
 
-    public init(threadID: String, kind: CodexLogEventKind, toolName: String?, summary: String, timestamp: Date) {
+    public init(
+        provider: ProviderKind = .codex,
+        threadID: String,
+        kind: CodexLogEventKind,
+        toolName: String?,
+        summary: String,
+        timestamp: Date
+    ) {
+        self.provider = provider
         self.threadID = threadID
         self.kind = kind
         self.toolName = toolName
         self.summary = summary
         self.timestamp = timestamp
+    }
+
+    public var sessionKey: String {
+        SessionIdentity.key(provider: provider, threadID: threadID)
     }
 }
 
@@ -81,21 +148,34 @@ public struct SessionMessagePreview: Sendable, Equatable {
         case assistant
     }
 
+    public let provider: ProviderKind
     public let threadID: String
     public let author: Author
     public let text: String
     public let timestamp: Date
 
-    public init(threadID: String, author: Author, text: String, timestamp: Date) {
+    public init(
+        provider: ProviderKind = .codex,
+        threadID: String,
+        author: Author,
+        text: String,
+        timestamp: Date
+    ) {
+        self.provider = provider
         self.threadID = threadID
         self.author = author
         self.text = text
         self.timestamp = timestamp
     }
+
+    public var sessionKey: String {
+        SessionIdentity.key(provider: provider, threadID: threadID)
+    }
 }
 
 public struct SessionPreview: Sendable, Equatable, Identifiable {
     public let id: String
+    public let provider: ProviderKind
     public let threadID: String
     public let title: String
     public let statusText: String
@@ -105,8 +185,10 @@ public struct SessionPreview: Sendable, Equatable, Identifiable {
     public let latestToolSummary: String?
     public let updatedAt: Date
     public let isPrimary: Bool
+    public let navigationTarget: SessionNavigationTarget
 
     public init(
+        provider: ProviderKind = .codex,
         threadID: String,
         title: String,
         statusText: String,
@@ -115,9 +197,11 @@ public struct SessionPreview: Sendable, Equatable, Identifiable {
         assistantPreview: String?,
         latestToolSummary: String?,
         updatedAt: Date,
-        isPrimary: Bool
+        isPrimary: Bool,
+        navigationTarget: SessionNavigationTarget? = nil
     ) {
-        self.id = threadID
+        self.id = SessionIdentity.key(provider: provider, threadID: threadID)
+        self.provider = provider
         self.threadID = threadID
         self.title = title
         self.statusText = statusText
@@ -127,10 +211,21 @@ public struct SessionPreview: Sendable, Equatable, Identifiable {
         self.latestToolSummary = latestToolSummary
         self.updatedAt = updatedAt
         self.isPrimary = isPrimary
+        self.navigationTarget = navigationTarget ?? {
+            switch provider {
+            case .codex:
+                return .codex(threadID: threadID)
+            case .claudeCode:
+                return .claudeCode(sessionID: threadID, workingDirectory: nil)
+            case .codeBuddy:
+                return .codeBuddy(conversationID: threadID, workingDirectory: nil)
+            }
+        }()
     }
 }
 
 public struct IslandSnapshot: Sendable, Equatable {
+    public let activeProvider: ProviderKind?
     public let primaryThreadID: String?
     public let threadTitle: String
     public let statusText: String
@@ -141,6 +236,7 @@ public struct IslandSnapshot: Sendable, Equatable {
     public let shouldNotifyCompletion: Bool
 
     public init(
+        activeProvider: ProviderKind? = nil,
         primaryThreadID: String?,
         threadTitle: String,
         statusText: String,
@@ -150,6 +246,7 @@ public struct IslandSnapshot: Sendable, Equatable {
         sessionPreviews: [SessionPreview],
         shouldNotifyCompletion: Bool
     ) {
+        self.activeProvider = activeProvider
         self.primaryThreadID = primaryThreadID
         self.threadTitle = threadTitle
         self.statusText = statusText

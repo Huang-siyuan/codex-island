@@ -56,8 +56,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panelController?.refreshPosition()
 
             if let completion = result.completionNotification {
-                notificationManager.notifyCompletion(threadID: completion.threadID, threadTitle: completion.threadTitle)
-                await pollingEngine.consumeCompletionNotification(for: completion.threadID)
+                notificationManager.notifyCompletion(
+                    provider: completion.provider,
+                    threadID: completion.threadID,
+                    threadTitle: completion.threadTitle
+                )
+                await pollingEngine.consumeCompletionNotification(for: completion.provider, threadID: completion.threadID)
             }
 
             try? await Task.sleep(for: .seconds(1))

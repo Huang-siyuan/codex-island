@@ -10,8 +10,8 @@ public final class NotificationPolicy {
         self.cooldown = cooldown
     }
 
-    public func shouldNotify(threadID: String, eventKind: CodexLogEventKind) -> Bool {
-        let key = "\(threadID):\(eventKind.rawValue)"
+    public func shouldNotify(provider: ProviderKind = .codex, threadID: String, eventKind: CodexLogEventKind) -> Bool {
+        let key = "\(provider.rawValue):\(threadID):\(eventKind.rawValue)"
         let current = now()
         if let previous = lastSent[key], current.timeIntervalSince(previous) < cooldown {
             return false

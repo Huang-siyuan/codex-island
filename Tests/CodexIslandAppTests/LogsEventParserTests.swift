@@ -38,3 +38,21 @@ func logsEventParserRecognizesResponseCompletion() throws {
 
     #expect(event.kind == .responseCompleted)
 }
+
+@Test
+func logsEventParserTreatsNeedsFollowUpAsInProgressWork() throws {
+    let row = LogRow(
+        id: 108,
+        timestamp: 1_776_323_013,
+        level: "INFO",
+        target: "codex_core::codex",
+        body: "post sampling token usage: prompt=118625 input=76570 output=48393 reasoning=47869 total=124963 auto_compact_limit=120000 token_limit_reached=false needs_follow_up=true",
+        threadID: "thread-1",
+        processUUID: "proc-1"
+    )
+
+    let event = try #require(LogsEventParser().parse(row: row))
+
+    #expect(event.kind == .responseInProgress)
+    #expect(event.summary == "Compacting context")
+}

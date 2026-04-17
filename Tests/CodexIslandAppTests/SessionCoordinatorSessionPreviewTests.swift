@@ -76,6 +76,7 @@ func sessionCoordinatorSanitizesFallbackUserPreview() {
 func sessionCoordinatorSanitizesSessionTitle() {
     let coordinator = SessionCoordinator(now: { Date(timeIntervalSince1970: 600) })
     let snapshot = ThreadSnapshot(
+        provider: .codex,
         threadID: "thread-10",
         title: "客服反馈用户提交认领入驻申请，手机号 15081633966，身份证号 130403199306022722，需要看这个标题是否会被摘要化",
         source: "desktop",
@@ -92,4 +93,55 @@ func sessionCoordinatorSanitizesSessionTitle() {
     #expect(islandSnapshot.threadTitle.contains("******************"))
     #expect(!islandSnapshot.threadTitle.contains("15081633966"))
     #expect(!islandSnapshot.threadTitle.contains("130403199306022722"))
+}
+
+@Test
+func sessionCoordinatorShowsOnlyActiveProvidersSessions() {
+    let coordinator = SessionCoordinator(now: { Date(timeIntervalSince1970: 400) })
+    let codexThread = ThreadSnapshot(
+        provider: .codex,
+        threadID: "codex-1",
+        title: "Codex auth fix",
+        source: "desktop",
+        cwd: "/tmp/codex",
+        updatedAt: Date(timeIntervalSince1970: 200),
+        firstUserMessage: "Fix the auth bug"
+    )
+    let codeBuddyPrimary = ThreadSnapshot(
+        provider: .codeBuddy,
+        threadID: "buddy-1",
+        title: "CodeBuddy storage check",
+        source: "codebuddy",
+        cwd: "/tmp/buddy",
+        updatedAt: Date(timeIntervalSince1970: 320),
+        firstUserMessage: nil
+    )
+    let codeBuddySecondary = ThreadSnapshot(
+        provider: .codeBuddy,
+        threadID: "buddy-2",
+        title: "CodeBuddy publish check",
+        source: "codebuddy",
+        cwd: "/tmp/buddy-2",
+        updatedAt: Date(timeIntervalSince1970: 310),
+        firstUserMessage: nil
+    )
+    let codexToolEvent = CodexLogEvent(
+        provider: .codex,
+        threadID: "codex-1",
+        kind: .toolUpdated,
+        toolName: "exec_command",
+        summary: "rg auth token",
+        timestamp: Date(timeIntervalSince1970: 205)
+    )
+
+    coordinator.apply(threadSnapshots: [codexThread, codeBuddyPrimary, codeBuddySecondary])
+    coordinator.apply(logEvents: [codexToolEvent])
+
+    let snapshot = coordinator.currentSnapshot
+
+    #expect(snapshot.activeProvider == .codex)
+    #expect(snapshot.sourceLabel == "Codex")
+    #expect(snapshot.sessionPreviews.count == 1)
+    #expect(snapshot.sessionPreviews.first?.provider == .codex)
+    #expect(snapshot.sessionPreviews.first?.threadID == "codex-1")
 }
