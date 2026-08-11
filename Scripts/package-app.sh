@@ -74,6 +74,9 @@ fi
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BIN_PATH" "$APP_DIR/Contents/MacOS/$PRODUCT_NAME"
 chmod +x "$APP_DIR/Contents/MacOS/$PRODUCT_NAME"
+if [[ "$CONFIGURATION" == "release" ]]; then
+  /usr/bin/strip -S "$APP_DIR/Contents/MacOS/$PRODUCT_NAME"
+fi
 cp "$PLIST_PATH" "$APP_DIR/Contents/Info.plist"
 printf 'APPL????' > "$APP_DIR/Contents/PkgInfo"
 
