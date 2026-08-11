@@ -1,6 +1,49 @@
 import CodexIslandCore
+import AppKit
 import CoreGraphics
 import Foundation
+import UniformTypeIdentifiers
+
+enum IslandExpandedTab: String, CaseIterable, Identifiable {
+    case sessions
+    case usage
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .sessions:
+            return "Sessions"
+        case .usage:
+            return "Usage"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .sessions:
+            return "message.fill"
+        case .usage:
+            return "chart.bar.fill"
+        }
+    }
+}
+
+enum UsageDashboardMetric: String, CaseIterable, Identifiable {
+    case tokens
+    case time
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .tokens:
+            return "Tokens"
+        case .time:
+            return "Time"
+        }
+    }
+}
 
 @MainActor
 final class IslandViewModel: ObservableObject {
@@ -12,6 +55,10 @@ final class IslandViewModel: ObservableObject {
     @Published var sessionPreviews: [SessionPreview] = []
     @Published var setupMessage: String?
     @Published var isSoundEnabled: Bool
+    @Published var customCompletionSoundName: String?
+    @Published var selectedExpandedTab: IslandExpandedTab = .sessions
+    @Published var usageMetric: UsageDashboardMetric = .tokens
+    @Published var usageSnapshot: LocalUsageSnapshot?
     @Published var compactBarHeight: CGFloat = 32
     @Published var compactBarWidth: CGFloat = IslandStatusPresentation.preferredCompactWidth
     @Published var compactTopAttachmentOverlap: CGFloat = MenuBarGeometry.resolvedCompactTopAttachmentOverlap(
@@ -25,15 +72,31 @@ final class IslandViewModel: ObservableObject {
         self.focusRouter = focusRouter
         self.soundPreferenceStore = soundPreferenceStore
         self.isSoundEnabled = soundPreferenceStore.isSoundEnabled
+        self.customCompletionSoundName = soundPreferenceStore.customCompletionSoundDisplayName
     }
 
-    func apply(snapshot: IslandSnapshot) {
-        threadTitle = snapshot.threadTitle
-        statusText = snapshot.statusText
-        latestToolSummary = snapshot.latestToolSummary
-        sourceLabel = snapshot.sourceLabel
-        activeSessionCount = snapshot.activeSessionCount
-        sessionPreviews = snapshot.sessionPreviews
+    func apply(snapshot: IslandSnapshot, usageSnapshot: LocalUsageSnapshot?) {
+        if threadTitle != snapshot.threadTitle {
+            threadTitle = snapshot.threadTitle
+        }
+        if statusText != snapshot.statusText {
+            statusText = snapshot.statusText
+        }
+        if latestToolSummary != snapshot.latestToolSummary {
+            latestToolSummary = snapshot.latestToolSummary
+        }
+        if sourceLabel != snapshot.sourceLabel {
+            sourceLabel = snapshot.sourceLabel
+        }
+        if activeSessionCount != snapshot.activeSessionCount {
+            activeSessionCount = snapshot.activeSessionCount
+        }
+        if sessionPreviews != snapshot.sessionPreviews {
+            sessionPreviews = snapshot.sessionPreviews
+        }
+        if self.usageSnapshot != usageSnapshot {
+            self.usageSnapshot = usageSnapshot
+        }
     }
 
     func showSetupResult(_ result: SetupResult?) {
@@ -54,6 +117,31 @@ final class IslandViewModel: ObservableObject {
 
     func toggleSoundEnabled() {
         isSoundEnabled = soundPreferenceStore.toggleSoundEnabled()
+    }
+
+    func chooseCustomCompletionSound() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Completion Sound"
+        panel.message = "Pick an audio file to play when an AI task finishes."
+        panel.prompt = "Use Sound"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.audio]
+
+        guard panel.runModal() == .OK, let soundURL = panel.url else {
+            return
+        }
+
+        soundPreferenceStore.customCompletionSoundURL = soundURL
+        soundPreferenceStore.isSoundEnabled = true
+        customCompletionSoundName = soundPreferenceStore.customCompletionSoundDisplayName
+        isSoundEnabled = true
+    }
+
+    func clearCustomCompletionSound() {
+        soundPreferenceStore.clearCustomCompletionSound()
+        customCompletionSoundName = nil
     }
 
     @discardableResult
@@ -81,4 +169,5 @@ final class IslandViewModel: ObservableObject {
         }
         return true
     }
+
 }

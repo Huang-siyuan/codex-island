@@ -53,6 +53,12 @@ final class IslandPanelController {
         let hostingView = TransparentHostingView(
             rootView: IslandRootView(
                 viewModel: viewModel,
+                isPointerInsideWindow: { [weak panel] in
+                    guard let panel else {
+                        return false
+                    }
+                    return NSMouseInRect(NSEvent.mouseLocation, panel.frame, false)
+                },
                 onMeasuredGeometryChange: { [weak panel, screenLocator] size, topAttachmentOverlap in
                     guard let panel else {
                         return
@@ -144,7 +150,11 @@ final class IslandPanelController {
         guard panel.frame.integral != targetFrame.integral else {
             return
         }
-        panel.setFrame(targetFrame, display: false)
+        panel.setFrame(
+            targetFrame,
+            display: false,
+            animate: false
+        )
     }
 
     private static func frame(
@@ -170,6 +180,7 @@ final class IslandPanelController {
             height: max(minimumSize.height, ceil(measuredSize.height))
         )
     }
+
 }
 
 private final class TopAttachmentState {

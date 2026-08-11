@@ -11,9 +11,11 @@ Codex Island 会停留在屏幕顶部，帮你持续看到当前 AI 编程会话
 - 监听 Codex、Claude Code CLI 和 CodeBuddy 的本机会话数据
 - 自动选择当前最活跃的 provider，并在紧凑 hub 中展示任务状态
 - 鼠标移入后展开最近会话列表，包含消息和工具预览
+- 新增本地 Usage 页，可查看 Token、活跃耗时、缓存效率、活跃趋势和常用模型
+- 鼠标悬停七日柱状图时，可查看当天的精确用量
 - 展开态详情区域支持 Markdown 渲染
 - 点击会话卡片可以跳回 Codex、Claude Code CLI 或 CodeBuddy
-- 内置提示音开关，可控制完成提醒声音
+- 内置提示音开关和自定义完成音效选择
 - 默认只在 hub 内保留完成状态，不再弹 macOS 系统横幅通知
 - 首次启动会自动完成本地 Codex wrapper 的轻量配置，尽量不需要手动改 shell
 
@@ -28,6 +30,8 @@ Codex Island 会停留在屏幕顶部，帮你持续看到当前 AI 编程会话
 - `~/Library/Application Support/CodeBuddy CN/User/globalStorage/tencent-cloud.coding-copilot/genie-history/*/current.json`
 
 应用只在本机读取这些数据，不会把 provider 会话内容上传到服务器。
+
+版本更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 本地运行
 

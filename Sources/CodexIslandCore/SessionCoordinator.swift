@@ -29,6 +29,23 @@ public final class SessionCoordinator {
         }
     }
 
+    public func pruneSessions(for provider: ProviderKind, keeping sessionKeys: Set<String>) {
+        let prefix = "\(provider.rawValue):"
+        let keysToRemove = threadSnapshots.keys.filter { key in
+            key.hasPrefix(prefix) && !sessionKeys.contains(key)
+        }
+
+        for key in keysToRemove {
+            threadSnapshots.removeValue(forKey: key)
+            latestLogEvents.removeValue(forKey: key)
+            latestActivityTimestamps.removeValue(forKey: key)
+            latestUserPreviews.removeValue(forKey: key)
+            latestAssistantPreviews.removeValue(forKey: key)
+            completionCandidates.removeValue(forKey: key)
+            deliveredCompletionCandidates.removeValue(forKey: key)
+        }
+    }
+
     public func apply(logEvents: [CodexLogEvent]) {
         for event in logEvents {
             let key = event.sessionKey
@@ -40,6 +57,9 @@ public final class SessionCoordinator {
                 if completionCandidates[key] == nil {
                     completionCandidates[key] = event.timestamp
                 }
+            case .responseInterrupted:
+                completionCandidates.removeValue(forKey: key)
+                deliveredCompletionCandidates.removeValue(forKey: key)
             case .responseCreated, .responseInProgress, .toolStarted, .toolUpdated, .toolCompleted:
                 if let completionCandidate = completionCandidates[key], event.timestamp >= completionCandidate {
                     completionCandidates.removeValue(forKey: key)
@@ -167,6 +187,8 @@ public final class SessionCoordinator {
                 priority = 4
             case .responseCreated, .responseInProgress, .toolCompleted, .responseCompleted:
                 priority = 3
+            case .responseInterrupted:
+                priority = 1
             }
         } else if now().timeIntervalSince(activity) < 5 {
             priority = 2
@@ -218,6 +240,8 @@ public final class SessionCoordinator {
             return "Tool active"
         case .responseCompleted:
             return "Running"
+        case .responseInterrupted:
+            return "Stopped"
         }
     }
 
@@ -228,7 +252,7 @@ public final class SessionCoordinator {
         switch event.kind {
         case .toolStarted, .toolUpdated, .toolCompleted:
             return event.summary
-        case .responseCreated, .responseInProgress, .responseCompleted:
+        case .responseCreated, .responseInProgress, .responseCompleted, .responseInterrupted:
             return nil
         }
     }

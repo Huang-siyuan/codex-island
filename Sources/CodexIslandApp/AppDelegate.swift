@@ -52,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func runSnapshotRefreshLoop() async {
         while !Task.isCancelled {
             let result = await pollingEngine.pollOnce()
-            viewModel.apply(snapshot: result.snapshot)
+            viewModel.apply(snapshot: result.snapshot, usageSnapshot: result.usageSnapshot)
             panelController?.refreshPosition()
 
             if let completion = result.completionNotification {

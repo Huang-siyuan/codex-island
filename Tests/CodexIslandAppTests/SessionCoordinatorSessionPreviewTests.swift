@@ -145,3 +145,55 @@ func sessionCoordinatorShowsOnlyActiveProvidersSessions() {
     #expect(snapshot.sessionPreviews.first?.provider == .codex)
     #expect(snapshot.sessionPreviews.first?.threadID == "codex-1")
 }
+@Test
+func sessionCoordinatorDropsSessionsThatAreNoLongerTrackedForProvider() {
+    let coordinator = SessionCoordinator(now: { Date(timeIntervalSince1970: 500) })
+    let staleRunning = ThreadSnapshot(
+        provider: .codex,
+        threadID: "old-running",
+        title: "Old Running",
+        source: "desktop",
+        cwd: nil,
+        updatedAt: Date(timeIntervalSince1970: 100),
+        firstUserMessage: nil
+    )
+    let staleEvent = CodexLogEvent(
+        provider: .codex,
+        threadID: "old-running",
+        kind: .responseInProgress,
+        toolName: nil,
+        summary: "Working",
+        timestamp: Date(timeIntervalSince1970: 100)
+    )
+    let currentDone = ThreadSnapshot(
+        provider: .codex,
+        threadID: "current-done",
+        title: "Current Done",
+        source: "desktop",
+        cwd: nil,
+        updatedAt: Date(timeIntervalSince1970: 300),
+        firstUserMessage: nil
+    )
+    let completion = CodexLogEvent(
+        provider: .codex,
+        threadID: "current-done",
+        kind: .responseCompleted,
+        toolName: nil,
+        summary: "Completed",
+        timestamp: Date(timeIntervalSince1970: 300)
+    )
+
+    coordinator.apply(threadSnapshots: [staleRunning])
+    coordinator.apply(logEvents: [staleEvent])
+
+    coordinator.pruneSessions(for: .codex, keeping: [currentDone.sessionKey])
+    coordinator.apply(threadSnapshots: [currentDone])
+    coordinator.apply(logEvents: [completion])
+
+    let snapshot = coordinator.currentSnapshot
+    #expect(snapshot.activeSessionCount == 1)
+    #expect(snapshot.primaryThreadID == "current-done")
+    #expect(snapshot.threadTitle == "Current Done")
+    #expect(snapshot.sessionPreviews.map(\.threadID) == ["current-done"])
+    #expect(snapshot.statusText == "Done")
+}

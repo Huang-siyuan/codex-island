@@ -208,3 +208,37 @@ func sessionCoordinatorKeepsRunningWhenCompactionFollowUpArrives() {
     #expect(coordinator.currentSnapshot.statusText == "Running")
     #expect(!coordinator.currentSnapshot.shouldNotifyCompletion)
 }
+
+@Test
+func sessionCoordinatorStopsShowingRunningAfterManualInterrupt() {
+    let coordinator = SessionCoordinator(now: { Date(timeIntervalSince1970: 320) })
+    let thread = ThreadSnapshot(
+        threadID: "b",
+        title: "New",
+        source: "desktop",
+        cwd: "/tmp/demo",
+        updatedAt: Date(timeIntervalSince1970: 300),
+        firstUserMessage: nil
+    )
+    let running = CodexLogEvent(
+        threadID: "b",
+        kind: .toolUpdated,
+        toolName: "exec_command",
+        summary: "Still working",
+        timestamp: Date(timeIntervalSince1970: 310)
+    )
+    let interrupted = CodexLogEvent(
+        threadID: "b",
+        kind: .responseInterrupted,
+        toolName: nil,
+        summary: "Stopped",
+        timestamp: Date(timeIntervalSince1970: 311)
+    )
+
+    coordinator.apply(threadSnapshots: [thread])
+    coordinator.apply(logEvents: [running, interrupted])
+
+    #expect(coordinator.currentSnapshot.statusText == "Stopped")
+    #expect(coordinator.currentSnapshot.latestToolSummary == nil)
+    #expect(!coordinator.currentSnapshot.shouldNotifyCompletion)
+}

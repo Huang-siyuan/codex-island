@@ -58,46 +58,14 @@ extension CGRect {
     }
 }
 
-func activeScreen() -> NSScreen? {
-    let islandPID = NSRunningApplication.runningApplications(withBundleIdentifier: "local.codex.island").first?.processIdentifier
-
-    guard let windowInfo = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
-        return NSScreen.main ?? NSScreen.screens.first
-    }
-
-    let candidates = windowInfo.compactMap(WindowCandidate.init).filter {
-        $0.layer == 0 &&
-        $0.alpha > 0.05 &&
-        $0.bounds.width > 120 &&
-        $0.bounds.height > 30
-    }
-
-    if let frontmostApp = NSWorkspace.shared.frontmostApplication,
-       frontmostApp.processIdentifier != islandPID {
-        let frontmostWindows = candidates.filter { $0.ownerPID == frontmostApp.processIdentifier }
-        if let window = frontmostWindows.max(by: { $0.area < $1.area }) {
-            let screenFrames = NSScreen.screens.map(ScreenFrame.init)
-            if let directMatch = screenFrames.first(where: { $0.quartzFrame.contains(window.bounds.center) }) {
-                return directMatch.screen
-            }
-
-            return screenFrames.max(by: {
-                $0.quartzFrame.intersectionArea(with: window.bounds) < $1.quartzFrame.intersectionArea(with: window.bounds)
-            })?.screen
-        }
-    }
-
-    guard let window = candidates.first(where: { $0.ownerPID != islandPID }) else {
-        return NSScreen.main ?? NSScreen.screens.first
-    }
-
+func screen(containing windowBounds: CGRect) -> NSScreen? {
     let screenFrames = NSScreen.screens.map(ScreenFrame.init)
-    if let directMatch = screenFrames.first(where: { $0.quartzFrame.contains(window.bounds.center) }) {
+    if let directMatch = screenFrames.first(where: { $0.quartzFrame.contains(windowBounds.center) }) {
         return directMatch.screen
     }
 
     return screenFrames.max(by: {
-        $0.quartzFrame.intersectionArea(with: window.bounds) < $1.quartzFrame.intersectionArea(with: window.bounds)
+        $0.quartzFrame.intersectionArea(with: windowBounds) < $1.quartzFrame.intersectionArea(with: windowBounds)
     })?.screen
 }
 
@@ -112,8 +80,8 @@ guard let windowInfo = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID)
     exit(1)
 }
 
-guard let screen = activeScreen() else {
-    fputs("Could not determine the active screen.\n", stderr)
+guard let screen = screen(containing: islandWindow.bounds) else {
+    fputs("Could not determine the island window's screen.\n", stderr)
     exit(1)
 }
 
@@ -127,6 +95,13 @@ let menuBarThickness = max(
     NSStatusBar.system.thickness
 )
 let topAttachmentOverlap = ceil(min(6, max(4, ceil(menuBarThickness) * 0.18)))
+let isBuiltInDisplay: Bool = {
+    guard let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+        return false
+    }
+
+    return CGDisplayIsBuiltin(CGDirectDisplayID(truncating: screenNumber)) != 0
+}()
 
 let unavailableTopCenterWidth: CGFloat? = {
     guard #available(macOS 12.0, *),
@@ -144,11 +119,15 @@ let unavailableTopCenterWidth: CGFloat? = {
 }()
 
 let expectedWidth: CGFloat = {
-    guard let unavailableTopCenterWidth else {
-        return defaultWidth
+    defaultWidth
+}()
+
+let extraVisibleReveal: CGFloat = {
+    guard isBuiltInDisplay, unavailableTopCenterWidth != nil else {
+        return 0
     }
 
-    return ceil(max(defaultWidth, min(defaultWidth + 12, unavailableTopCenterWidth + 18)))
+    return 9
 }()
 
 guard abs(islandWindow.bounds.minY - expectedMinY) <= 8 else {
@@ -161,9 +140,9 @@ guard abs(islandWindow.bounds.width - expectedWidth) <= 2 else {
     exit(1)
 }
 
-guard abs(islandWindow.bounds.height - (menuBarThickness + topAttachmentOverlap)) <= heightTolerance else {
+guard abs(islandWindow.bounds.height - (menuBarThickness + extraVisibleReveal + topAttachmentOverlap)) <= heightTolerance else {
     fputs(
-        "Collapsed shell height is not aligned to the menu bar attachment model. expected≈\(menuBarThickness + topAttachmentOverlap) actual=\(islandWindow.bounds.height)\n",
+        "Collapsed shell height is not aligned to the notch reveal model. expected≈\(menuBarThickness + extraVisibleReveal + topAttachmentOverlap) actual=\(islandWindow.bounds.height)\n",
         stderr
     )
     exit(1)

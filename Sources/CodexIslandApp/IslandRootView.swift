@@ -3,11 +3,17 @@ import SwiftUI
 
 struct IslandRootView: View {
     @ObservedObject var viewModel: IslandViewModel
+    var isPointerInsideWindow: () -> Bool = { false }
     var onMeasuredGeometryChange: (CGSize, CGFloat) -> Void = { _, _ in }
 
-    private let expandedWidth: CGFloat = 760
+    private let shellExpandAnimation = Animation.spring(response: 0.34, dampingFraction: 0.84)
+    private let shellCollapseAnimation = Animation.spring(response: 0.30, dampingFraction: 0.86)
+    private let detailRevealAnimation = Animation.spring(response: 0.24, dampingFraction: 0.88)
+    private let detailHideAnimation = Animation.easeOut(duration: 0.18)
 
     @State private var isExpanded = false
+    @State private var showsExpandedContent = false
+    @State private var detailRevealTask: Task<Void, Never>?
     @State private var lastReportedSize: CGSize = .zero
     @State private var lastReportedTopAttachmentOverlap: CGFloat = -.greatestFiniteMagnitude
 
@@ -30,29 +36,20 @@ struct IslandRootView: View {
         VStack(alignment: .leading, spacing: isExpanded ? 16 : 0) {
             if isExpanded {
                 expandedHeader
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .top)),
+                            removal: .opacity
+                        )
+                    )
             } else {
                 collapsedHeader
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
             }
 
-            if isExpanded {
-                if let setupMessage = viewModel.setupMessage {
-                    Label(setupMessage, systemImage: "wand.and.stars")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(viewModel.sessionPreviews) { preview in
-                        sessionPreviewCard(preview)
-                    }
-                    if viewModel.sessionPreviews.isEmpty {
-                        emptyState
-                    }
-                }
+            if isExpanded, showsExpandedContent {
+                expandedContent
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(.horizontal, isExpanded ? 16 : IslandStatusPresentation.compactHorizontalPadding)
@@ -60,7 +57,6 @@ struct IslandRootView: View {
         .frame(width: isExpanded ? expandedWidth : compactShellWidth, alignment: .leading)
         .frame(height: isExpanded ? nil : compactShellHeight, alignment: .center)
         .fixedSize(horizontal: false, vertical: true)
-        .compositingGroup()
         .background {
             shellShape.fill(shellGradient)
         }
@@ -69,17 +65,20 @@ struct IslandRootView: View {
                 .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
         }
         .clipShape(shellShape)
-        .contentShape(shellShape)
+        .contentShape(Rectangle())
         .foregroundStyle(.white)
-        .animation(.spring(duration: 0.25), value: isExpanded)
         .onHover { hovering in
-            isExpanded = hovering
+            handleHoverChange(hovering)
         }
+        .animation(shellExpandAnimation, value: viewModel.selectedExpandedTab)
         .onTapGesture {
             guard !isExpanded else {
                 return
             }
-            isExpanded = true
+            expandIsland()
+        }
+        .onDisappear {
+            detailRevealTask?.cancel()
         }
     }
 
@@ -117,11 +116,99 @@ struct IslandRootView: View {
             Spacer()
 
             HStack(spacing: 8) {
+                expandedTabPicker
                 soundToggleButton
+                customSoundButton
+                if viewModel.customCompletionSoundName != nil {
+                    clearCustomSoundButton
+                }
 
                 Text(sessionCountText)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var expandedContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Group {
+                switch viewModel.selectedExpandedTab {
+                case .sessions:
+                    sessionsContent
+                case .usage:
+                    usageContent
+                }
+            }
+        }
+    }
+
+    private var sessionsContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let setupMessage = viewModel.setupMessage {
+                Label(setupMessage, systemImage: "wand.and.stars")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(viewModel.sessionPreviews) { preview in
+                    sessionPreviewCard(preview)
+                }
+                if viewModel.sessionPreviews.isEmpty {
+                    emptyState
+                }
+            }
+        }
+    }
+
+    private var usageContent: some View {
+        UsageDashboardView(
+            metric: $viewModel.usageMetric,
+            snapshot: viewModel.usageSnapshot
+        )
+    }
+
+    private var expandedTabPicker: some View {
+        HStack(spacing: 6) {
+            ForEach(IslandExpandedTab.allCases) { tab in
+                Button {
+                    guard viewModel.selectedExpandedTab != tab else {
+                        return
+                    }
+                    withAnimation(shellExpandAnimation) {
+                        viewModel.selectedExpandedTab = tab
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: tab.systemImage)
+                            .font(.system(size: 10, weight: .semibold))
+
+                        Text(tab.title)
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(viewModel.selectedExpandedTab == tab ? Color.white : Color.white.opacity(0.68))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        viewModel.selectedExpandedTab == tab
+                            ? Color.white.opacity(0.12)
+                            : Color.white.opacity(0.05),
+                        in: Capsule()
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                Color.white.opacity(viewModel.selectedExpandedTab == tab ? 0.09 : 0.04),
+                                lineWidth: 1
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -142,6 +229,42 @@ struct IslandRootView: View {
         }
         .buttonStyle(.plain)
         .help(viewModel.isSoundEnabled ? "Mute completion sound" : "Enable completion sound")
+    }
+
+    private var customSoundButton: some View {
+        Button {
+            viewModel.chooseCustomCompletionSound()
+        } label: {
+            Image(systemName: viewModel.customCompletionSoundName == nil ? "music.note" : "music.note.list")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(viewModel.customCompletionSoundName == nil ? Color.white.opacity(0.65) : Color.white.opacity(0.92))
+                .frame(width: 26, height: 22)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(viewModel.customCompletionSoundName.map { "Custom completion sound: \($0)" } ?? "Choose custom completion sound")
+    }
+
+    private var clearCustomSoundButton: some View {
+        Button {
+            viewModel.clearCustomCompletionSound()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Color.white.opacity(0.58))
+                .frame(width: 22, height: 22)
+                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("Use default completion sound")
     }
 
     private func sessionPreviewCard(_ preview: SessionPreview) -> some View {
@@ -239,6 +362,10 @@ struct IslandRootView: View {
         )
     }
 
+    private var expandedWidth: CGFloat {
+        760
+    }
+
     private var compactStatusText: String {
         IslandStatusPresentation.compactLabelText(for: viewModel.statusText)
     }
@@ -330,6 +457,57 @@ struct IslandRootView: View {
         lastReportedSize = normalizedSize
         lastReportedTopAttachmentOverlap = normalizedTopAttachmentOverlap
         onMeasuredGeometryChange(normalizedSize, normalizedTopAttachmentOverlap)
+    }
+
+    private func handleHoverChange(_ hovering: Bool) {
+        if hovering {
+            expandIsland()
+        } else {
+            scheduleCollapse()
+        }
+    }
+
+    private func expandIsland() {
+        if !isExpanded {
+            withAnimation(shellExpandAnimation) {
+                isExpanded = true
+            }
+        }
+
+        guard !showsExpandedContent, detailRevealTask == nil else {
+            return
+        }
+
+        // Let the lightweight shell react first, then mount the larger detail tree.
+        detailRevealTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(35))
+            guard !Task.isCancelled, isExpanded else {
+                detailRevealTask = nil
+                return
+            }
+            withAnimation(detailRevealAnimation) {
+                showsExpandedContent = true
+            }
+            detailRevealTask = nil
+        }
+    }
+
+    private func scheduleCollapse() {
+        // SwiftUI can emit a false hover-exit while replacing the tracking area.
+        // Verify the real window frame synchronously so genuine exits collapse immediately.
+        guard !isPointerInsideWindow() else {
+            return
+        }
+        collapseIsland()
+    }
+
+    private func collapseIsland() {
+        detailRevealTask?.cancel()
+        detailRevealTask = nil
+        withAnimation(shellCollapseAnimation) {
+            showsExpandedContent = false
+            isExpanded = false
+        }
     }
 }
 

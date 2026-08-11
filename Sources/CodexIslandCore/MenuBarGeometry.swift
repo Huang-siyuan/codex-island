@@ -1,7 +1,10 @@
 import AppKit
+import CoreGraphics
 import Foundation
 
 public enum MenuBarGeometry {
+    public static let builtInNotchExtraVisibleReveal: CGFloat = 9
+
     public struct CompactBarLayout: Equatable {
         public let height: CGFloat
         public let width: CGFloat
@@ -25,6 +28,8 @@ public enum MenuBarGeometry {
     }
 
     public static func compactBarLayout(for screen: NSScreen, defaultWidth: CGFloat) -> CompactBarLayout {
+        let isBuiltInDisplay = isBuiltInDisplay(screen)
+        let baseHeight = compactBarHeight(for: screen)
         let unavailableTopCenterArea: CGRect?
         if #available(macOS 12.0, *) {
             unavailableTopCenterArea = resolvedUnavailableTopCenterArea(
@@ -37,17 +42,18 @@ public enum MenuBarGeometry {
         }
 
         return CompactBarLayout(
-            height: compactBarHeight(for: screen),
-            width: resolvedCompactBarWidth(
-                defaultWidth: defaultWidth,
-                unavailableTopCenterWidth: unavailableTopCenterArea?.width
+            height: resolvedCompactVisibleHeight(
+                baseHeight: baseHeight,
+                unavailableTopCenterAreaHeight: unavailableTopCenterArea?.height,
+                isBuiltInDisplay: isBuiltInDisplay
             ),
+            width: resolvedCompactBarWidth(defaultWidth: defaultWidth),
             centerX: resolvedCompactBarCenterX(
                 screenFrame: screen.frame,
                 unavailableTopCenterArea: unavailableTopCenterArea
             ),
             topAttachmentOverlap: resolvedCompactTopAttachmentOverlap(
-                visibleHeight: compactBarHeight(for: screen)
+                visibleHeight: baseHeight
             ),
             usesUnavailableTopCenterArea: unavailableTopCenterArea != nil
         )
@@ -110,15 +116,23 @@ public enum MenuBarGeometry {
         return CGRect(x: gapMinX, y: gapMinY, width: gapWidth, height: gapHeight).integral
     }
 
-    public static func resolvedCompactBarWidth(
-        defaultWidth: CGFloat,
-        unavailableTopCenterWidth: CGFloat?
+    public static func resolvedCompactBarWidth(defaultWidth: CGFloat) -> CGFloat {
+        ceil(defaultWidth)
+    }
+
+    public static func resolvedCompactVisibleHeight(
+        baseHeight: CGFloat,
+        unavailableTopCenterAreaHeight: CGFloat?,
+        isBuiltInDisplay: Bool
     ) -> CGFloat {
-        guard let unavailableTopCenterWidth, unavailableTopCenterWidth > 0 else {
-            return ceil(defaultWidth)
+        let normalizedBaseHeight = max(22, ceil(baseHeight))
+        guard isBuiltInDisplay,
+              let unavailableTopCenterAreaHeight,
+              unavailableTopCenterAreaHeight > 0 else {
+            return normalizedBaseHeight
         }
 
-        return ceil(max(defaultWidth, min(defaultWidth + 12, unavailableTopCenterWidth + 18)))
+        return normalizedBaseHeight + builtInNotchExtraVisibleReveal
     }
 
     public static func resolvedCompactBarCenterX(
@@ -131,5 +145,19 @@ public enum MenuBarGeometry {
     public static func resolvedCompactTopAttachmentOverlap(visibleHeight: CGFloat) -> CGFloat {
         let normalizedHeight = max(22, ceil(visibleHeight))
         return ceil(min(6, max(4, normalizedHeight * 0.18)))
+    }
+
+    public static func isBuiltInDisplay(_ screen: NSScreen) -> Bool {
+        guard let displayID = displayID(for: screen) else {
+            return false
+        }
+
+        return CGDisplayIsBuiltin(displayID) != 0
+    }
+
+    public static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber).map {
+            CGDirectDisplayID(truncating: $0)
+        }
     }
 }

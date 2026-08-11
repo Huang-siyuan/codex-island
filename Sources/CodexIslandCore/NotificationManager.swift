@@ -12,14 +12,14 @@ public final class NotificationManager {
     private let bannerStyle: CompletionBannerStyle
     private let soundPreferenceStore: SoundPreferenceStore
     private let bannerPresenter: @MainActor (_ title: String, _ body: String) -> Void
-    private let soundPlayer: @MainActor () -> Void
+    private let soundPlayer: @MainActor (_ customSoundURL: URL?) -> Void
 
     public init(
         policy: NotificationPolicy = NotificationPolicy(),
         bannerStyle: CompletionBannerStyle = .hidden,
         soundPreferenceStore: SoundPreferenceStore = SoundPreferenceStore(),
         bannerPresenter: @escaping @MainActor (_ title: String, _ body: String) -> Void = NotificationManager.defaultBannerPresenter,
-        soundPlayer: @escaping @MainActor () -> Void = NotificationManager.defaultSoundPlayer
+        soundPlayer: @escaping @MainActor (_ customSoundURL: URL?) -> Void = NotificationManager.defaultSoundPlayer
     ) {
         self.policy = policy
         self.bannerStyle = bannerStyle
@@ -42,11 +42,18 @@ public final class NotificationManager {
             bannerPresenter("\(provider.displayName) task finished", threadTitle)
         }
         if soundPreferenceStore.isSoundEnabled {
-            soundPlayer()
+            soundPlayer(soundPreferenceStore.customCompletionSoundURL)
         }
     }
 
-    public static func defaultSoundPlayer() {
+    public static func defaultSoundPlayer(customSoundURL: URL?) {
+        if let customSoundURL,
+           FileManager.default.fileExists(atPath: customSoundURL.path),
+           let customSound = NSSound(contentsOf: customSoundURL, byReference: true) {
+            customSound.play()
+            return
+        }
+
         NSSound(named: .init("Glass"))?.play()
     }
 

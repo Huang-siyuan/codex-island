@@ -108,6 +108,7 @@ public enum CodexLogEventKind: String, Sendable, Equatable {
     case responseCreated
     case responseInProgress
     case responseCompleted
+    case responseInterrupted
     case toolStarted
     case toolUpdated
     case toolCompleted

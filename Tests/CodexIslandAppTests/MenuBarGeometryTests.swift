@@ -39,20 +39,36 @@ func menuBarGeometryDetectsUnavailableTopCenterArea() {
 @Test
 func menuBarGeometryKeepsDefaultWidthWithoutUnavailableTopCenterArea() {
     #expect(
-        MenuBarGeometry.resolvedCompactBarWidth(
-            defaultWidth: 109,
-            unavailableTopCenterWidth: nil
-        ) == 109
+        MenuBarGeometry.resolvedCompactBarWidth(defaultWidth: 109) == 109
     )
 }
 
 @Test
-func menuBarGeometryExpandsWidthForNotchScreens() {
+func menuBarGeometryKeepsDefaultWidthForExternalDisplays() {
     #expect(
-        MenuBarGeometry.resolvedCompactBarWidth(
-            defaultWidth: 109,
-            unavailableTopCenterWidth: 185
-        ) == 121
+        MenuBarGeometry.resolvedCompactVisibleHeight(
+            baseHeight: 33,
+            unavailableTopCenterAreaHeight: 32,
+            isBuiltInDisplay: false
+        ) == 33
+    )
+}
+
+@Test
+func menuBarGeometryKeepsDefaultWidthForBuiltInDisplaysWithANotch() {
+    #expect(
+        MenuBarGeometry.resolvedCompactBarWidth(defaultWidth: 109) == 109
+    )
+}
+
+@Test
+func menuBarGeometryAddsRevealForBuiltInDisplaysWithANotch() {
+    #expect(
+        MenuBarGeometry.resolvedCompactVisibleHeight(
+            baseHeight: 33,
+            unavailableTopCenterAreaHeight: 32,
+            isBuiltInDisplay: true
+        ) == 42
     )
 }
 

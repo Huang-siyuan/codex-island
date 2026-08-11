@@ -138,6 +138,12 @@ public struct LogsEventParser {
     }
 
     private func extractFallbackEvent(from body: String) -> (kind: CodexLogEventKind, summary: String)? {
+        if body.contains(#"codex.op="interrupt""#) ||
+            body.contains("interrupt received: abort current task") ||
+            body.contains("aborting running task") {
+            return (.responseInterrupted, "Stopped")
+        }
+
         if body.contains("needs_follow_up=true") {
             let summary = body.contains("auto_compact_limit=") ? "Compacting context" : "Preparing follow-up"
             return (.responseInProgress, summary)
@@ -192,6 +198,8 @@ public struct LogsEventParser {
             return "Working"
         case .responseCompleted:
             return "Completed"
+        case .responseInterrupted:
+            return "Stopped"
         case .toolStarted:
             return "Tool call started"
         case .toolUpdated:

@@ -11,9 +11,11 @@ Codex Island lives at the top of your screen, keeps the active AI coding session
 - Watches local session data from Codex, Claude Code CLI, and CodeBuddy
 - Chooses the most active provider and shows its task state in a compact island
 - Expands into recent sessions for the active provider, including message and tool previews
+- Includes a local Usage tab for token and active-time trends, cache efficiency, activity streaks, and top models
+- Shows exact daily usage when hovering over the seven-day chart
 - Supports markdown rendering in the expanded session detail area
 - Lets you click a session card to jump back into Codex, Claude Code CLI, or CodeBuddy
-- Includes an in-app sound toggle for completion alerts
+- Includes an in-app sound toggle and custom completion sound picker
 - Keeps completion state in the hub without showing macOS system banners by default
 - Performs first-launch setup so the local Codex wrapper is available without manual shell edits
 
@@ -28,6 +30,8 @@ Codex Island lives at the top of your screen, keeps the active AI coding session
 - `~/Library/Application Support/CodeBuddy CN/User/globalStorage/tencent-cloud.coding-copilot/genie-history/*/current.json`
 
 The app is local-only and does not upload provider session data to a server.
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## Run locally
 

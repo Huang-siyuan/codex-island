@@ -56,3 +56,22 @@ func logsEventParserTreatsNeedsFollowUpAsInProgressWork() throws {
     #expect(event.kind == .responseInProgress)
     #expect(event.summary == "Compacting context")
 }
+
+@Test
+func logsEventParserRecognizesManualInterruptLogs() throws {
+    let row = LogRow(
+        id: 109,
+        timestamp: 1_778_666_758,
+        level: "INFO",
+        target: "codex_core::session",
+        body: #"session_loop{thread_id=Jackm}:submission_dispatch{otel.name="op.dispatch.interrupt" submission.id="Jackm" codex.op="interrupt"}: interrupt received: abort current task, if any"#,
+        threadID: nil,
+        processUUID: "proc-1"
+    )
+
+    let event = try #require(LogsEventParser().parse(row: row))
+
+    #expect(event.threadID == "Jackm")
+    #expect(event.kind == .responseInterrupted)
+    #expect(event.summary == "Stopped")
+}
