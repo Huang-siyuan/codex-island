@@ -74,7 +74,6 @@ That copies the packaged app into:
 
 - `~/Applications/Codex Island.app`
 
-
 ## First launch behavior
 
 On the first successful launch, the app will:

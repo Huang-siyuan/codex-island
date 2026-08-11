@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-root="/Users/Jackm/IdeaProjects/codex-island"
+root="${0:A:h:h}"
 view="$root/Sources/CodexIslandApp/IslandRootView.swift"
 viewModel="$root/Sources/CodexIslandApp/IslandViewModel.swift"
 router="$root/Sources/CodexIslandCore/FocusRouter.swift"

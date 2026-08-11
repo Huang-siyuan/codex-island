@@ -74,7 +74,6 @@ swift build
 
 - `~/Applications/Codex Island.app`
 
-
 ## 首次启动行为
 
 第一次成功启动后，应用会：

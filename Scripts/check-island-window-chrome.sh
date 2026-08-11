@@ -1,8 +1,9 @@
 #!/bin/zsh
 set -euo pipefail
 
-PANEL_FILE="/Users/Jackm/IdeaProjects/codex-island/Sources/CodexIslandApp/IslandPanelController.swift"
-ROOT_VIEW_FILE="/Users/Jackm/IdeaProjects/codex-island/Sources/CodexIslandApp/IslandRootView.swift"
+ROOT_DIR="${0:A:h:h}"
+PANEL_FILE="$ROOT_DIR/Sources/CodexIslandApp/IslandPanelController.swift"
+ROOT_VIEW_FILE="$ROOT_DIR/Sources/CodexIslandApp/IslandRootView.swift"
 
 if rg -q "height: 132" "$PANEL_FILE"; then
   echo "Panel still uses a hard-coded height." >&2
@@ -19,8 +20,8 @@ rg -q "setContentSize|setFrame\\(" "$PANEL_FILE" || {
   exit 1
 }
 
-rg -q "onMeasuredSizeChange" "$ROOT_VIEW_FILE" || {
-  echo "Root view does not report measured size changes." >&2
+rg -q "onMeasuredGeometryChange" "$ROOT_VIEW_FILE" || {
+  echo "Root view does not report measured geometry changes." >&2
   exit 1
 }
 

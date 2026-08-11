@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-ROOT="/Users/Jackm/IdeaProjects/codex-island"
+ROOT="${0:A:h:h}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -47,7 +47,7 @@ struct ParserRegression {
                 timestamp: 1776247490,
                 level: "info",
                 target: "codex_api::endpoint::responses_websocket",
-                body: #"session_loop{thread_id=Jackm}: websocket event: {"type":"response.function_call_arguments.done","arguments":"{\"cmd\":\"sqlite3 -line /Users/Jackm/.codex/logs_2.sqlite \\\"select id from logs limit 1;\\\"\",\"workdir\":\"/Users/Jackm/IdeaProjects\"}","item_id":"fc_Jackm","output_index":2,"sequence_number":88}"#,
+                body: #"session_loop{thread_id=Jackm}: websocket event: {"type":"response.function_call_arguments.done","arguments":"{\"cmd\":\"sqlite3 -line /Users/Jackm/.codex/logs_2.sqlite \\\"select id from logs limit 1;\\\"\",\"workdir\":\"/Users/Jackm/Projects\"}","item_id":"fc_Jackm","output_index":2,"sequence_number":88}"#,
                 threadID: threadID,
                 processUUID: nil
             )),
