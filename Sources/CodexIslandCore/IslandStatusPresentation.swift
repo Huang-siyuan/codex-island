@@ -16,16 +16,11 @@ public enum IslandStatusPresentation {
     public static let preferredCompactWidth: CGFloat = resolvedCompactWidth(forLabelWidths: compactCandidateLabels.map(measureCompactLabelWidth))
 
     public static func compactLabelText(for statusText: String) -> String {
-        switch statusText {
-        case "Tool active":
-            return "Tool active"
-        case "Running":
-            return "Running"
-        case "Done":
-            return "Watching"
-        default:
-            return "Watching"
-        }
+        InterfaceLanguage.english.compactStatusText(for: statusText)
+    }
+
+    public static func compactLabelText(for statusText: String, language: InterfaceLanguage) -> String {
+        language.compactStatusText(for: statusText)
     }
 
     public static func compactBadgeText(for statusText: String) -> String {

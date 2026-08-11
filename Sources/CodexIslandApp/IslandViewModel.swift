@@ -10,12 +10,12 @@ enum IslandExpandedTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    func title(language: InterfaceLanguage) -> String {
         switch self {
         case .sessions:
-            return "Sessions"
+            return language.text("Sessions", "会话")
         case .usage:
-            return "Usage"
+            return language.text("Usage", "用量")
         }
     }
 
@@ -35,12 +35,12 @@ enum UsageDashboardMetric: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    func title(language: InterfaceLanguage) -> String {
         switch self {
         case .tokens:
-            return "Tokens"
+            return language.text("Tokens", "Token")
         case .time:
-            return "Time"
+            return language.text("Time", "时间")
         }
     }
 }
@@ -119,11 +119,14 @@ final class IslandViewModel: ObservableObject {
         isSoundEnabled = soundPreferenceStore.toggleSoundEnabled()
     }
 
-    func chooseCustomCompletionSound() {
+    func chooseCustomCompletionSound(language: InterfaceLanguage) {
         let panel = NSOpenPanel()
-        panel.title = "Choose Completion Sound"
-        panel.message = "Pick an audio file to play when an AI task finishes."
-        panel.prompt = "Use Sound"
+        panel.title = language.text("Choose Completion Sound", "选择完成提示音")
+        panel.message = language.text(
+            "Pick an audio file to play when an AI task finishes.",
+            "选择 AI 任务完成时播放的音频文件。"
+        )
+        panel.prompt = language.text("Use Sound", "使用此音效")
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true

@@ -69,22 +69,63 @@ public struct LocalUsageModel: Sendable, Equatable, Identifiable {
     public var id: String { model }
 }
 
-public struct LocalUsageSnapshot: Sendable, Equatable {
-    public let updatedAt: Date
+public struct LocalUsageWorkspace: Sendable, Equatable, Identifiable {
+    public let path: String
+    public let name: String
     public let days: [LocalUsageDay]
     public let totals: LocalUsageTotals
     public let topModels: [LocalUsageModel]
 
     public init(
-        updatedAt: Date,
+        path: String,
+        name: String,
         days: [LocalUsageDay],
         totals: LocalUsageTotals,
         topModels: [LocalUsageModel]
+    ) {
+        self.path = path
+        self.name = name
+        self.days = days
+        self.totals = totals
+        self.topModels = topModels
+    }
+
+    public var id: String { path }
+}
+
+public struct LocalUsageSnapshot: Sendable, Equatable {
+    public let updatedAt: Date
+    public let days: [LocalUsageDay]
+    public let totals: LocalUsageTotals
+    public let topModels: [LocalUsageModel]
+    public let workspaces: [LocalUsageWorkspace]
+
+    public init(
+        updatedAt: Date,
+        days: [LocalUsageDay],
+        totals: LocalUsageTotals,
+        topModels: [LocalUsageModel],
+        workspaces: [LocalUsageWorkspace] = []
     ) {
         self.updatedAt = updatedAt
         self.days = days
         self.totals = totals
         self.topModels = topModels
+        self.workspaces = workspaces
+    }
+
+    public func filtered(toWorkspaceID workspaceID: String?) -> LocalUsageSnapshot {
+        guard let workspaceID,
+              let workspace = workspaces.first(where: { $0.id == workspaceID }) else {
+            return self
+        }
+        return LocalUsageSnapshot(
+            updatedAt: updatedAt,
+            days: workspace.days,
+            totals: workspace.totals,
+            topModels: workspace.topModels,
+            workspaces: workspaces
+        )
     }
 
     public static func empty(days: Int = 30, now: Date = Date()) -> LocalUsageSnapshot {
@@ -118,7 +159,8 @@ public struct LocalUsageSnapshot: Sendable, Equatable {
                 peakDay: nil,
                 peakDayTokens: 0
             ),
-            topModels: []
+            topModels: [],
+            workspaces: []
         )
     }
 }
@@ -138,6 +180,12 @@ public final class LocalUsageSnapshotReader {
         var output: Int = 0
     }
 
+    private struct ScanResult {
+        let workspacePath: String?
+        let daily: [String: DailyTotals]
+        let modelTotals: [String: Int]
+    }
+
     private static let maxActivityGapMS = 2 * 60 * 1_000
     fileprivate static let dayKeyFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -152,6 +200,7 @@ public final class LocalUsageSnapshotReader {
     private let calendar: Calendar
     private let now: () -> Date
     private let sessionsRootsProvider: () -> [URL]
+    private let savedWorkspaceRootsProvider: () -> [URL]?
     private let fractionalISO8601Formatter: ISO8601DateFormatter
     private let fallbackISO8601Formatter: ISO8601DateFormatter
 
@@ -162,10 +211,14 @@ public final class LocalUsageSnapshotReader {
         now: @escaping () -> Date = Date.init
     ) {
         let sessionsRoot = environment.codexHome.appendingPathComponent("sessions", isDirectory: true)
+        let globalStateURL = environment.codexHome.appendingPathComponent(".codex-global-state.json")
         self.fileManager = fileManager
         self.calendar = calendar
         self.now = now
         self.sessionsRootsProvider = { [sessionsRoot] in [sessionsRoot] }
+        self.savedWorkspaceRootsProvider = {
+            Self.readSavedWorkspaceRoots(from: globalStateURL, fileManager: fileManager)
+        }
         let fractionalFormatter = ISO8601DateFormatter()
         fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         fractionalFormatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -178,6 +231,7 @@ public final class LocalUsageSnapshotReader {
 
     init(
         sessionsRoots: [URL],
+        savedWorkspaceRoots: [URL]? = nil,
         fileManager: FileManager = .default,
         calendar: Calendar = .autoupdatingCurrent,
         now: @escaping () -> Date = Date.init
@@ -186,6 +240,7 @@ public final class LocalUsageSnapshotReader {
         self.calendar = calendar
         self.now = now
         self.sessionsRootsProvider = { sessionsRoots }
+        self.savedWorkspaceRootsProvider = { savedWorkspaceRoots }
         let fractionalFormatter = ISO8601DateFormatter()
         fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         fractionalFormatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -202,20 +257,59 @@ public final class LocalUsageSnapshotReader {
         let dayKeys = makeDayKeys(days: normalizedDays, referenceDate: referenceDate)
         var daily = Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) })
         var modelTotals: [String: Int] = [:]
+        var workspaceDaily: [String: [String: DailyTotals]] = [:]
+        var workspaceModelTotals: [String: [String: Int]] = [:]
+        let savedWorkspacePaths = savedWorkspaceRootsProvider().map(normalizedWorkspacePaths)
+
+        // Codex's saved workspace roots are the source of truth for the project picker.
+        if let savedWorkspacePaths {
+            for path in savedWorkspacePaths {
+                workspaceDaily[path] = Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) })
+                workspaceModelTotals[path] = [:]
+            }
+        }
 
         let sessionRoots = Array(Set(sessionsRootsProvider().map(\.path)))
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
             .filter { fileManager.fileExists(atPath: $0.path) }
 
         for root in sessionRoots {
-            scan(root: root, dayKeys: dayKeys, daily: &daily, modelTotals: &modelTotals)
+            scan(
+                root: root,
+                dayKeys: dayKeys,
+                daily: &daily,
+                modelTotals: &modelTotals,
+                workspaceDaily: &workspaceDaily,
+                workspaceModelTotals: &workspaceModelTotals,
+                savedWorkspacePaths: savedWorkspacePaths
+            )
+        }
+
+        let workspaces: [LocalUsageWorkspace] = workspaceDaily.keys.map { path in
+            let workspaceSnapshot = buildSnapshot(
+                updatedAt: referenceDate,
+                dayKeys: dayKeys,
+                daily: workspaceDaily[path] ?? [:],
+                modelTotals: workspaceModelTotals[path] ?? [:]
+            )
+            return LocalUsageWorkspace(
+                path: path,
+                name: URL(fileURLWithPath: path).lastPathComponent,
+                days: workspaceSnapshot.days,
+                totals: workspaceSnapshot.totals,
+                topModels: workspaceSnapshot.topModels
+            )
+        }
+        .sorted { lhs, rhs in
+            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
 
         return buildSnapshot(
             updatedAt: referenceDate,
             dayKeys: dayKeys,
             daily: daily,
-            modelTotals: modelTotals
+            modelTotals: modelTotals,
+            workspaces: workspaces
         )
     }
 
@@ -223,7 +317,10 @@ public final class LocalUsageSnapshotReader {
         root: URL,
         dayKeys: [String],
         daily: inout [String: DailyTotals],
-        modelTotals: inout [String: Int]
+        modelTotals: inout [String: Int],
+        workspaceDaily: inout [String: [String: DailyTotals]],
+        workspaceModelTotals: inout [String: [String: Int]],
+        savedWorkspacePaths: [String]?
     ) {
         for dayKey in dayKeys {
             let dayDirectory = directoryURL(for: dayKey, under: root)
@@ -236,20 +333,82 @@ public final class LocalUsageSnapshotReader {
             }
 
             for fileURL in fileURLs where fileURL.pathExtension == "jsonl" {
-                scan(fileURL: fileURL, daily: &daily, modelTotals: &modelTotals)
+                guard let result = scan(fileURL: fileURL, dayKeys: dayKeys) else {
+                    continue
+                }
+                let workspacePath: String?
+                if let savedWorkspacePaths {
+                    workspacePath = result.workspacePath.flatMap {
+                        matchingWorkspaceRoot(for: $0, savedWorkspacePaths: savedWorkspacePaths)
+                    }
+                    guard workspacePath != nil else {
+                        continue
+                    }
+                } else {
+                    workspacePath = result.workspacePath
+                }
+
+                merge(result.daily, into: &daily)
+                merge(result.modelTotals, into: &modelTotals)
+
+                guard let workspacePath else {
+                    continue
+                }
+                var scopedDaily = workspaceDaily[workspacePath]
+                    ?? Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) })
+                var scopedModels = workspaceModelTotals[workspacePath] ?? [:]
+                merge(result.daily, into: &scopedDaily)
+                merge(result.modelTotals, into: &scopedModels)
+                workspaceDaily[workspacePath] = scopedDaily
+                workspaceModelTotals[workspacePath] = scopedModels
             }
+        }
+    }
+
+    private func normalizedWorkspacePaths(_ roots: [URL]) -> [String] {
+        Array(Set(roots.map { $0.standardizedFileURL.path }))
+            .sorted { lhs, rhs in
+                if lhs.count != rhs.count {
+                    return lhs.count > rhs.count
+                }
+                return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
+            }
+    }
+
+    private func matchingWorkspaceRoot(for sessionPath: String, savedWorkspacePaths: [String]) -> String? {
+        savedWorkspacePaths.first { rootPath in
+            sessionPath == rootPath || sessionPath.hasPrefix(rootPath + "/")
+        }
+    }
+
+    private static func readSavedWorkspaceRoots(from url: URL, fileManager: FileManager) -> [URL] {
+        guard fileManager.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let paths = object["electron-saved-workspace-roots"] as? [String] else {
+            return []
+        }
+
+        return paths.compactMap { rawPath in
+            let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !path.isEmpty else {
+                return nil
+            }
+            return URL(fileURLWithPath: path, isDirectory: true)
         }
     }
 
     private func scan(
         fileURL: URL,
-        daily: inout [String: DailyTotals],
-        modelTotals: inout [String: Int]
-    ) {
+        dayKeys: [String]
+    ) -> ScanResult? {
         guard let transcript = try? String(contentsOf: fileURL, encoding: .utf8) else {
-            return
+            return nil
         }
 
+        var daily = Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) })
+        var modelTotals: [String: Int] = [:]
+        var workspacePath: String?
         var previousTotals = UsageTotals()
         var currentModel: String?
         var lastActivityMS: Int64?
@@ -271,6 +430,7 @@ public final class LocalUsageSnapshotReader {
             }
 
             if entryType == "session_meta" {
+                workspacePath = extractWorkspacePath(fromSessionMeta: object) ?? workspacePath
                 continue
             }
 
@@ -374,13 +534,20 @@ public final class LocalUsageSnapshotReader {
                 trackActivity(timestampMS, daily: &daily, lastActivityMS: &lastActivityMS)
             }
         }
+
+        return ScanResult(
+            workspacePath: workspacePath,
+            daily: daily,
+            modelTotals: modelTotals
+        )
     }
 
     private func buildSnapshot(
         updatedAt: Date,
         dayKeys: [String],
         daily: [String: DailyTotals],
-        modelTotals: [String: Int]
+        modelTotals: [String: Int],
+        workspaces: [LocalUsageWorkspace] = []
     ) -> LocalUsageSnapshot {
         var days: [LocalUsageDay] = []
         var totalTokens = 0
@@ -439,8 +606,29 @@ public final class LocalUsageSnapshotReader {
                 peakDay: peakDescriptor?.dayKey,
                 peakDayTokens: peakDescriptor?.totalTokens ?? 0
             ),
-            topModels: Array(topModels)
+            topModels: Array(topModels),
+            workspaces: workspaces
         )
+    }
+
+    private func merge(_ source: [String: DailyTotals], into target: inout [String: DailyTotals]) {
+        for (dayKey, sourceTotals) in source {
+            guard var targetTotals = target[dayKey] else {
+                continue
+            }
+            targetTotals.input += sourceTotals.input
+            targetTotals.cached += sourceTotals.cached
+            targetTotals.output += sourceTotals.output
+            targetTotals.agentTimeMS += sourceTotals.agentTimeMS
+            targetTotals.agentRuns += sourceTotals.agentRuns
+            target[dayKey] = targetTotals
+        }
+    }
+
+    private func merge(_ source: [String: Int], into target: inout [String: Int]) {
+        for (key, value) in source {
+            target[key, default: 0] += value
+        }
     }
 
     private func makeDayKeys(days: Int, referenceDate: Date) -> [String] {
@@ -526,6 +714,18 @@ public final class LocalUsageSnapshotReader {
         }
 
         return nil
+    }
+
+    private func extractWorkspacePath(fromSessionMeta object: [String: Any]) -> String? {
+        guard let payload = object["payload"] as? [String: Any],
+              let rawPath = payload["cwd"] as? String else {
+            return nil
+        }
+        let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else {
+            return nil
+        }
+        return URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
     private func extractModel(fromTurnContext object: [String: Any]) -> String? {

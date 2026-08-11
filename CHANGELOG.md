@@ -2,6 +2,30 @@
 
 All notable changes to Codex Island are recorded here.
 
+## [v0.2.1] - 2026-08-11
+
+### Added
+
+- Added an English and Simplified Chinese language switch for island status, sessions, and usage views.
+- Added workspace filtering with usage, recent-activity, and name sorting modes.
+- Added hover emphasis for usage cards and exact values for daily chart bars.
+
+### Improved
+
+- Refined the Usage dashboard layout, typography, compact chart sizing, empty-value placement, and workspace selector affordance.
+- Kept workspace menus inside the expanded island so selecting a project no longer triggers an unintended collapse.
+- Improved localized duration and date formatting so longer Chinese values remain readable.
+
+### Fixed
+
+- Limited the workspace picker and aggregate usage totals to projects explicitly imported into Codex.
+- Mapped sessions created from project subdirectories back to their imported Codex workspace root.
+- Removed temporary and unknown session directories from workspace choices and usage totals.
+
+### Verification
+
+- `swift test`: 55 tests passed.
+
 ## [v0.2.0] - 2026-08-11
 
 ### Added

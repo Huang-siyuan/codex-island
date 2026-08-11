@@ -16,9 +16,11 @@ struct IslandRootView: View {
     @State private var detailRevealTask: Task<Void, Never>?
     @State private var lastReportedSize: CGSize = .zero
     @State private var lastReportedTopAttachmentOverlap: CGFloat = -.greatestFiniteMagnitude
+    @AppStorage("interfaceLanguage") private var interfaceLanguageRaw = InterfaceLanguage.english.rawValue
 
     var body: some View {
         islandCard
+            .environment(\.locale, language.locale)
             .background {
                 GeometryReader { proxy in
                     Color.clear
@@ -71,6 +73,7 @@ struct IslandRootView: View {
             handleHoverChange(hovering)
         }
         .animation(shellExpandAnimation, value: viewModel.selectedExpandedTab)
+        .animation(shellExpandAnimation, value: interfaceLanguageRaw)
         .onTapGesture {
             guard !isExpanded else {
                 return
@@ -103,11 +106,13 @@ struct IslandRootView: View {
                 .frame(width: 10, height: 10)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.threadTitle)
+                Text(localizedThreadTitle)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                    .layoutPriority(1)
 
-                Text(viewModel.latestToolSummary ?? viewModel.statusText)
+                Text(viewModel.latestToolSummary ?? language.statusText(for: viewModel.statusText))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -117,6 +122,7 @@ struct IslandRootView: View {
 
             HStack(spacing: 8) {
                 expandedTabPicker
+                languageToggleButton
                 soundToggleButton
                 customSoundButton
                 if viewModel.customCompletionSoundName != nil {
@@ -146,7 +152,7 @@ struct IslandRootView: View {
     private var sessionsContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let setupMessage = viewModel.setupMessage {
-                Label(setupMessage, systemImage: "wand.and.stars")
+                Label(localizedSetupMessage(setupMessage), systemImage: "wand.and.stars")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -169,7 +175,8 @@ struct IslandRootView: View {
     private var usageContent: some View {
         UsageDashboardView(
             metric: $viewModel.usageMetric,
-            snapshot: viewModel.usageSnapshot
+            snapshot: viewModel.usageSnapshot,
+            language: language
         )
     }
 
@@ -188,9 +195,11 @@ struct IslandRootView: View {
                         Image(systemName: tab.systemImage)
                             .font(.system(size: 10, weight: .semibold))
 
-                        Text(tab.title)
+                        Text(tab.title(language: language))
                             .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                     .foregroundStyle(viewModel.selectedExpandedTab == tab ? Color.white : Color.white.opacity(0.68))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
@@ -213,6 +222,27 @@ struct IslandRootView: View {
         }
     }
 
+    private var languageToggleButton: some View {
+        Button {
+            interfaceLanguageRaw = language == .english
+                ? InterfaceLanguage.simplifiedChinese.rawValue
+                : InterfaceLanguage.english.rawValue
+        } label: {
+            Text(language.toggleTitle)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Color.white.opacity(0.86))
+                .frame(width: 26, height: 22)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(language.text("Switch to Chinese", "切换到英文"))
+        .accessibilityLabel(language.text("Switch interface language to Chinese", "将界面语言切换为英文"))
+    }
+
     private var soundToggleButton: some View {
         Button {
             viewModel.toggleSoundEnabled()
@@ -228,12 +258,16 @@ struct IslandRootView: View {
                 )
         }
         .buttonStyle(.plain)
-        .help(viewModel.isSoundEnabled ? "Mute completion sound" : "Enable completion sound")
+        .help(
+            viewModel.isSoundEnabled
+                ? language.text("Mute completion sound", "关闭完成提示音")
+                : language.text("Enable completion sound", "开启完成提示音")
+        )
     }
 
     private var customSoundButton: some View {
         Button {
-            viewModel.chooseCustomCompletionSound()
+            viewModel.chooseCustomCompletionSound(language: language)
         } label: {
             Image(systemName: viewModel.customCompletionSoundName == nil ? "music.note" : "music.note.list")
                 .font(.system(size: 11, weight: .semibold))
@@ -246,7 +280,11 @@ struct IslandRootView: View {
                 )
         }
         .buttonStyle(.plain)
-        .help(viewModel.customCompletionSoundName.map { "Custom completion sound: \($0)" } ?? "Choose custom completion sound")
+        .help(
+            viewModel.customCompletionSoundName.map {
+                language.text("Custom completion sound: \($0)", "自定义完成提示音：\($0)")
+            } ?? language.text("Choose custom completion sound", "选择自定义完成提示音")
+        )
     }
 
     private var clearCustomSoundButton: some View {
@@ -264,7 +302,7 @@ struct IslandRootView: View {
                 )
         }
         .buttonStyle(.plain)
-        .help("Use default completion sound")
+        .help(language.text("Use default completion sound", "使用默认完成提示音"))
     }
 
     private func sessionPreviewCard(_ preview: SessionPreview) -> some View {
@@ -288,13 +326,16 @@ struct IslandRootView: View {
 
                             HStack(spacing: 8) {
                                 badge(text: preview.sourceLabel, color: .white.opacity(0.12))
-                                badge(text: preview.statusText, color: statusColor(for: preview.statusText).opacity(0.2))
+                                badge(
+                                    text: language.statusText(for: preview.statusText),
+                                    color: statusColor(for: preview.statusText).opacity(0.2)
+                                )
                                 badge(text: relativeAgeText(for: preview.updatedAt), color: .white.opacity(0.08))
                             }
                         }
 
                         if let userPreview = preview.userPreview, !userPreview.isEmpty {
-                            Text("You: \(userPreview)")
+                            Text(language.text("You: \(userPreview)", "你：\(userPreview)"))
                                 .font(.system(size: 13, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color.white.opacity(0.78))
                                 .lineLimit(2)
@@ -329,7 +370,7 @@ struct IslandRootView: View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles.rectangle.stack")
                 .foregroundStyle(.secondary)
-            Text("Waiting for recent session previews")
+            Text(language.text("Waiting for recent session previews", "正在等待最近的会话预览"))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
         }
@@ -347,7 +388,8 @@ struct IslandRootView: View {
     }
 
     private var sessionCountText: String {
-        "\(viewModel.sessionPreviews.count)/\(max(viewModel.activeSessionCount, viewModel.sessionPreviews.count)) sessions"
+        let count = "\(viewModel.sessionPreviews.count)/\(max(viewModel.activeSessionCount, viewModel.sessionPreviews.count))"
+        return language.text("\(count) sessions", "\(count) 个会话")
     }
 
     private var statusColor: Color {
@@ -367,7 +409,7 @@ struct IslandRootView: View {
     }
 
     private var compactStatusText: String {
-        IslandStatusPresentation.compactLabelText(for: viewModel.statusText)
+        IslandStatusPresentation.compactLabelText(for: viewModel.statusText, language: language)
     }
 
     private var compactVisibleHeight: CGFloat {
@@ -431,15 +473,37 @@ struct IslandRootView: View {
     private func relativeAgeText(for date: Date) -> String {
         let seconds = max(0, Int(Date().timeIntervalSince(date)))
         if seconds < 60 {
-            return "now"
+            return language.text("now", "刚刚")
         }
         if seconds < 3600 {
-            return "\(seconds / 60)m"
+            return language.text("\(seconds / 60)m", "\(seconds / 60)分钟前")
         }
         if seconds < 86_400 {
-            return "\(seconds / 3_600)h"
+            return language.text("\(seconds / 3_600)h", "\(seconds / 3_600)小时前")
         }
-        return "\(seconds / 86_400)d"
+        return language.text("\(seconds / 86_400)d", "\(seconds / 86_400)天前")
+    }
+
+    private var language: InterfaceLanguage {
+        InterfaceLanguage(rawValue: interfaceLanguageRaw) ?? .english
+    }
+
+    private var localizedThreadTitle: String {
+        guard viewModel.threadTitle == "Watching AI tools" else {
+            return viewModel.threadTitle
+        }
+        return language.text(viewModel.threadTitle, "监看 AI 工具")
+    }
+
+    private func localizedSetupMessage(_ message: String) -> String {
+        switch message {
+        case "CLI helper installed and zsh updated":
+            return language.text(message, "CLI 辅助工具已安装，并已更新 zsh")
+        case "CLI helper installed":
+            return language.text(message, "CLI 辅助工具已安装")
+        default:
+            return message
+        }
     }
 
     private func reportMeasuredGeometry(_ size: CGSize) {
