@@ -27,9 +27,12 @@ swiftc \
   "$ROOT_DIR/Sources/CodexIslandCore/CodexModels.swift" \
   "$ROOT_DIR/Sources/CodexIslandCore/SessionIndexParser.swift" \
   "$ROOT_DIR/Sources/CodexIslandCore/SessionIndexReader.swift" \
+  "$ROOT_DIR/Sources/CodexIslandCore/SQLiteShell.swift" \
   "$ROOT_DIR/Sources/CodexIslandCore/CodexStateStore.swift" \
   "$ROOT_DIR/Sources/CodexIslandCore/LogsEventParser.swift" \
   "$ROOT_DIR/Sources/CodexIslandCore/SessionPreviewParser.swift" \
+  "$ROOT_DIR/Sources/CodexIslandCore/ClaudeTranscriptParser.swift" \
+  "$ROOT_DIR/Sources/CodexIslandCore/SessionProviders.swift" \
   "$ROOT_DIR/Sources/CodexIslandCore/SessionCoordinator.swift" \
   "$ROOT_DIR/Sources/CodexIslandCore/PollingEngine.swift" \
   "$TMP_DIR/main.swift"

@@ -2,6 +2,8 @@ import Foundation
 
 public final class SessionIndexReader {
     private let parser = SessionIndexParser()
+    private var cachedFileVersion: FileVersion?
+    private var cachedEntries: [SessionIndexEntry] = []
 
     public init() {}
 
@@ -42,14 +44,33 @@ public final class SessionIndexReader {
 
     private func readEntries(from url: URL) throws -> [SessionIndexEntry] {
         guard FileManager.default.fileExists(atPath: url.path) else {
+            cachedFileVersion = nil
+            cachedEntries = []
             return []
         }
 
+        let resourceValues = try url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        let fileVersion = FileVersion(
+            modificationDate: resourceValues.contentModificationDate,
+            size: resourceValues.fileSize
+        )
+        if cachedFileVersion == fileVersion {
+            return cachedEntries
+        }
+
         let contents = try String(contentsOf: url, encoding: .utf8)
-        return try contents
+        let entries = try contents
             .split(whereSeparator: \.isNewline)
             .compactMap { line in
                 try parser.parse(line: String(line))
             }
+        cachedFileVersion = fileVersion
+        cachedEntries = entries
+        return entries
     }
+}
+
+private struct FileVersion: Equatable {
+    let modificationDate: Date?
+    let size: Int?
 }

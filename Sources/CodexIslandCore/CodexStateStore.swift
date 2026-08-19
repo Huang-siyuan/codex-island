@@ -1,5 +1,32 @@
 import Foundation
 
+struct DataSourceVersion: Equatable {
+    private struct Entry: Equatable {
+        let path: String
+        let modificationDate: Date?
+        let fileSize: UInt64?
+    }
+
+    private let entries: [Entry]
+
+    static func capture(files: [URL]) -> DataSourceVersion {
+        DataSourceVersion(entries: files
+            .map(makeEntry(for:))
+            .sorted { $0.path < $1.path })
+    }
+
+    private static func makeEntry(for url: URL) -> Entry {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+            return Entry(path: url.path, modificationDate: nil, fileSize: nil)
+        }
+        return Entry(
+            path: url.path,
+            modificationDate: attributes[.modificationDate] as? Date,
+            fileSize: (attributes[.size] as? NSNumber)?.uint64Value
+        )
+    }
+}
+
 public final class CodexStateStore {
     private let environment: AppEnvironment
     private let shell = SQLiteShell()
@@ -7,6 +34,16 @@ public final class CodexStateStore {
 
     public init(environment: AppEnvironment = .default) {
         self.environment = environment
+    }
+
+    func currentDataVersion() -> DataSourceVersion {
+        DataSourceVersion.capture(files: [
+            environment.stateStoreURL,
+            URL(fileURLWithPath: environment.stateStoreURL.path + "-wal"),
+            environment.logsStoreURL,
+            URL(fileURLWithPath: environment.logsStoreURL.path + "-wal"),
+            environment.sessionIndexURL,
+        ])
     }
 
     public func fetchRecentThreads(limit: Int = 6) throws -> [ThreadSnapshot] {

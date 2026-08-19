@@ -64,6 +64,7 @@ final class IslandViewModel: ObservableObject {
     @Published var compactTopAttachmentOverlap: CGFloat = MenuBarGeometry.resolvedCompactTopAttachmentOverlap(
         visibleHeight: 32
     )
+    var onUsageRequested: (() -> Void)?
 
     private let focusRouter: FocusRouter
     private let soundPreferenceStore: SoundPreferenceStore
@@ -75,7 +76,7 @@ final class IslandViewModel: ObservableObject {
         self.customCompletionSoundName = soundPreferenceStore.customCompletionSoundDisplayName
     }
 
-    func apply(snapshot: IslandSnapshot, usageSnapshot: LocalUsageSnapshot?) {
+    func apply(snapshot: IslandSnapshot) {
         if threadTitle != snapshot.threadTitle {
             threadTitle = snapshot.threadTitle
         }
@@ -94,8 +95,25 @@ final class IslandViewModel: ObservableObject {
         if sessionPreviews != snapshot.sessionPreviews {
             sessionPreviews = snapshot.sessionPreviews
         }
-        if self.usageSnapshot != usageSnapshot {
-            self.usageSnapshot = usageSnapshot
+    }
+
+    func selectExpandedTab(_ tab: IslandExpandedTab) {
+        selectedExpandedTab = tab
+        if tab == .usage {
+            onUsageRequested?()
+        }
+    }
+
+    func refreshUsageIfSelected() {
+        guard selectedExpandedTab == .usage else {
+            return
+        }
+        onUsageRequested?()
+    }
+
+    func applyUsageSnapshot(_ snapshot: LocalUsageSnapshot) {
+        if usageSnapshot != snapshot {
+            usageSnapshot = snapshot
         }
     }
 

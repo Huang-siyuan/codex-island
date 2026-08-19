@@ -14,16 +14,13 @@ public struct CompletionNotificationRequest: Sendable, Equatable {
 
 public struct PollingResult: Sendable, Equatable {
     public let snapshot: IslandSnapshot
-    public let usageSnapshot: LocalUsageSnapshot?
     public let completionNotification: CompletionNotificationRequest?
 
     public init(
         snapshot: IslandSnapshot,
-        usageSnapshot: LocalUsageSnapshot?,
         completionNotification: CompletionNotificationRequest?
     ) {
         self.snapshot = snapshot
-        self.usageSnapshot = usageSnapshot
         self.completionNotification = completionNotification
     }
 }
@@ -31,17 +28,10 @@ public struct PollingResult: Sendable, Equatable {
 public actor PollingEngine {
     private let coordinator: SessionCoordinator
     private let providers: [any SessionProvider]
-    private let usageSnapshotReader: LocalUsageSnapshotReader
-    private let usageRefreshInterval: TimeInterval
-    private let now: () -> Date
-    private var cachedUsageSnapshot: LocalUsageSnapshot?
-    private var lastUsageRefreshAt: Date?
+    private var lastPollAtByProvider: [ProviderKind: Date] = [:]
 
     public init(
         coordinator: SessionCoordinator = SessionCoordinator(),
-        usageSnapshotReader: LocalUsageSnapshotReader = LocalUsageSnapshotReader(),
-        usageRefreshInterval: TimeInterval = 20,
-        now: @escaping () -> Date = Date.init,
         providers: [any SessionProvider] = [
             CodexSessionProvider(),
             ClaudeCodeSessionProvider(),
@@ -49,17 +39,20 @@ public actor PollingEngine {
         ]
     ) {
         self.coordinator = coordinator
-        self.usageSnapshotReader = usageSnapshotReader
-        self.usageRefreshInterval = usageRefreshInterval
-        self.now = now
         self.providers = providers
     }
 
     public func pollOnce() -> PollingResult {
-        let usageSnapshot = refreshUsageSnapshotIfNeeded()
         do {
+            let now = Date()
             for provider in providers {
+                if let lastPollAt = lastPollAtByProvider[provider.kind],
+                   now.timeIntervalSince(lastPollAt) < provider.minimumPollingInterval {
+                    continue
+                }
+
                 let result = try provider.poll()
+                lastPollAtByProvider[provider.kind] = now
                 coordinator.pruneSessions(
                     for: provider.kind,
                     keeping: Set(result.threadSnapshots.map(\.sessionKey))
@@ -101,13 +94,11 @@ public actor PollingEngine {
                 : nil
             return PollingResult(
                 snapshot: snapshot,
-                usageSnapshot: usageSnapshot,
                 completionNotification: completionNotification
             )
         } catch {
             return PollingResult(
                 snapshot: fallbackSnapshot(errorDescription: error.localizedDescription),
-                usageSnapshot: cachedUsageSnapshot,
                 completionNotification: nil
             )
         }
@@ -135,23 +126,4 @@ public actor PollingEngine {
         )
     }
 
-    private func refreshUsageSnapshotIfNeeded() -> LocalUsageSnapshot? {
-        let currentTime = now()
-        let shouldRefresh: Bool
-
-        if cachedUsageSnapshot == nil {
-            shouldRefresh = true
-        } else if let lastUsageRefreshAt {
-            shouldRefresh = currentTime.timeIntervalSince(lastUsageRefreshAt) >= usageRefreshInterval
-        } else {
-            shouldRefresh = true
-        }
-
-        if shouldRefresh {
-            cachedUsageSnapshot = usageSnapshotReader.readSnapshot(days: 30)
-            lastUsageRefreshAt = currentTime
-        }
-
-        return cachedUsageSnapshot
-    }
 }

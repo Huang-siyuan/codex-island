@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let focusRouter = FocusRouter()
     private let firstLaunchSetup = FirstLaunchSetup()
     private let pollingEngine = PollingEngine()
+    private let usageSnapshotLoader = UsageSnapshotLoader()
     private let screenLocator = ActiveScreenLocator()
     private let soundPreferenceStore = SoundPreferenceStore()
 
@@ -17,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private var panelController: IslandPanelController?
     private var pollingTask: Task<Void, Never>?
+    private var usageSnapshotTask: Task<Void, Never>?
     private var workspaceActivationObserver: NSObjectProtocol?
     private var screenParametersObserver: NSObjectProtocol?
 
@@ -24,6 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         screenLocator.noteActivatedApplication(NSWorkspace.shared.frontmostApplication)
         panelController = IslandPanelController(viewModel: viewModel, screenLocator: screenLocator)
+        viewModel.onUsageRequested = { [weak self] in
+            self?.loadUsageSnapshotIfNeeded()
+        }
         panelController?.show()
         installPositionObservers()
         scheduleLaunchReposition()
@@ -41,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         pollingTask?.cancel()
+        usageSnapshotTask?.cancel()
         if let workspaceActivationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(workspaceActivationObserver)
         }
@@ -52,8 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func runSnapshotRefreshLoop() async {
         while !Task.isCancelled {
             let result = await pollingEngine.pollOnce()
-            viewModel.apply(snapshot: result.snapshot, usageSnapshot: result.usageSnapshot)
-            panelController?.refreshPosition()
+            viewModel.apply(snapshot: result.snapshot)
 
             if let completion = result.completionNotification {
                 notificationManager.notifyCompletion(
@@ -65,6 +70,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             try? await Task.sleep(for: .seconds(1))
+        }
+    }
+
+    private func loadUsageSnapshotIfNeeded() {
+        guard usageSnapshotTask == nil else {
+            return
+        }
+
+        usageSnapshotTask = Task(priority: .background) { [weak self] in
+            guard let self else {
+                return
+            }
+            if let cachedSnapshot = await usageSnapshotLoader.cached() {
+                viewModel.applyUsageSnapshot(cachedSnapshot)
+            }
+            let snapshot = await usageSnapshotLoader.snapshot()
+            guard !Task.isCancelled else {
+                usageSnapshotTask = nil
+                return
+            }
+            viewModel.applyUsageSnapshot(snapshot)
+            usageSnapshotTask = nil
         }
     }
 

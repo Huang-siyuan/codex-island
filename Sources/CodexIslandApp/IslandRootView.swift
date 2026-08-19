@@ -188,7 +188,7 @@ struct IslandRootView: View {
                         return
                     }
                     withAnimation(shellExpandAnimation) {
-                        viewModel.selectedExpandedTab = tab
+                        viewModel.selectExpandedTab(tab)
                     }
                 } label: {
                     HStack(spacing: 6) {
@@ -536,6 +536,8 @@ struct IslandRootView: View {
             withAnimation(shellExpandAnimation) {
                 isExpanded = true
             }
+            // The selected tab survives collapse, so reopening Usage must request a fresh snapshot too.
+            viewModel.refreshUsageIfSelected()
         }
 
         guard !showsExpandedContent, detailRevealTask == nil else {

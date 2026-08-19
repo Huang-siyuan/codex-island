@@ -1,6 +1,62 @@
 import Foundation
 
-public struct LocalUsageDay: Sendable, Equatable, Identifiable {
+public actor UsageSnapshotLoader {
+    private let reader: LocalUsageSnapshotReader
+    private let refreshInterval: TimeInterval
+    private let cacheURL: URL
+    private var cachedSnapshot: LocalUsageSnapshot?
+    private var lastRefreshAt: Date?
+
+    public init(
+        reader: LocalUsageSnapshotReader = LocalUsageSnapshotReader(),
+        refreshInterval: TimeInterval = 1_800,
+        cacheURL: URL? = nil
+    ) {
+        self.reader = reader
+        self.refreshInterval = refreshInterval
+        self.cacheURL = cacheURL ?? FileManager.default.urls(
+            for: .cachesDirectory,
+            in: .userDomainMask
+        )[0]
+            .appendingPathComponent("CodexIsland", isDirectory: true)
+            .appendingPathComponent("usage-snapshot.json")
+
+        if let data = try? Data(contentsOf: self.cacheURL),
+           let snapshot = try? JSONDecoder().decode(LocalUsageSnapshot.self, from: data) {
+            cachedSnapshot = snapshot
+            lastRefreshAt = snapshot.updatedAt
+        }
+    }
+
+    public func cached() -> LocalUsageSnapshot? {
+        cachedSnapshot
+    }
+
+    public func snapshot(now: Date = Date()) -> LocalUsageSnapshot {
+        if let cachedSnapshot,
+           let lastRefreshAt,
+           now.timeIntervalSince(lastRefreshAt) < refreshInterval {
+            return cachedSnapshot
+        }
+
+        let snapshot = reader.readSnapshot(days: 30)
+        cachedSnapshot = snapshot
+        lastRefreshAt = now
+        persist(snapshot)
+        return snapshot
+    }
+
+    private func persist(_ snapshot: LocalUsageSnapshot) {
+        guard let data = try? JSONEncoder().encode(snapshot) else {
+            return
+        }
+        let directory = cacheURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? data.write(to: cacheURL, options: .atomic)
+    }
+}
+
+public struct LocalUsageDay: Codable, Sendable, Equatable, Identifiable {
     public let dayKey: String
     public let inputTokens: Int
     public let cachedInputTokens: Int
@@ -30,7 +86,7 @@ public struct LocalUsageDay: Sendable, Equatable, Identifiable {
     public var id: String { dayKey }
 }
 
-public struct LocalUsageTotals: Sendable, Equatable {
+public struct LocalUsageTotals: Codable, Sendable, Equatable {
     public let last7DaysTokens: Int
     public let last30DaysTokens: Int
     public let averageDailyTokens: Int
@@ -55,7 +111,7 @@ public struct LocalUsageTotals: Sendable, Equatable {
     }
 }
 
-public struct LocalUsageModel: Sendable, Equatable, Identifiable {
+public struct LocalUsageModel: Codable, Sendable, Equatable, Identifiable {
     public let model: String
     public let tokens: Int
     public let sharePercent: Double
@@ -69,7 +125,7 @@ public struct LocalUsageModel: Sendable, Equatable, Identifiable {
     public var id: String { model }
 }
 
-public struct LocalUsageWorkspace: Sendable, Equatable, Identifiable {
+public struct LocalUsageWorkspace: Codable, Sendable, Equatable, Identifiable {
     public let path: String
     public let name: String
     public let days: [LocalUsageDay]
@@ -93,7 +149,7 @@ public struct LocalUsageWorkspace: Sendable, Equatable, Identifiable {
     public var id: String { path }
 }
 
-public struct LocalUsageSnapshot: Sendable, Equatable {
+public struct LocalUsageSnapshot: Codable, Sendable, Equatable {
     public let updatedAt: Date
     public let days: [LocalUsageDay]
     public let totals: LocalUsageTotals
@@ -166,6 +222,18 @@ public struct LocalUsageSnapshot: Sendable, Equatable {
 }
 
 public final class LocalUsageSnapshotReader {
+    // Usage events are small; large lines are usually images or tool payloads and must not enter JSON decoding.
+    private static let maximumRelevantLineSize = 128_000
+    private static let jsonTypePrefix = Array("\"type\":\"".utf8)
+    private static let relevantEventTypes: [[UInt8]] = [
+        Array("session_meta\"".utf8),
+        Array("turn_context\"".utf8),
+        Array("token_count\"".utf8),
+        Array("agent_message\"".utf8),
+        Array("agent_reasoning\"".utf8),
+        Array("response_item\"".utf8),
+    ]
+
     private struct DailyTotals {
         var input: Int = 0
         var cached: Int = 0
@@ -186,6 +254,31 @@ public final class LocalUsageSnapshotReader {
         let modelTotals: [String: Int]
     }
 
+    private struct ScanState {
+        var daily: [String: DailyTotals]
+        var modelTotals: [String: Int] = [:]
+        var workspacePath: String?
+        var previousTotals = UsageTotals()
+        var currentModel: String?
+        var lastActivityMS: Int64?
+        var seenRuns: Set<Int64> = []
+
+        var result: ScanResult {
+            ScanResult(
+                workspacePath: workspacePath,
+                daily: daily,
+                modelTotals: modelTotals
+            )
+        }
+    }
+
+    private struct FileScanCache {
+        var fileSize: UInt64
+        var modificationDate: Date?
+        var endedWithNewline: Bool
+        var state: ScanState
+    }
+
     private static let maxActivityGapMS = 2 * 60 * 1_000
     fileprivate static let dayKeyFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -203,6 +296,9 @@ public final class LocalUsageSnapshotReader {
     private let savedWorkspaceRootsProvider: () -> [URL]?
     private let fractionalISO8601Formatter: ISO8601DateFormatter
     private let fallbackISO8601Formatter: ISO8601DateFormatter
+    private var cachedDayKeys: [String] = []
+    private var fileScanCache: [String: FileScanCache] = [:]
+    private var scannedFilePaths: Set<String> = []
 
     public init(
         environment: AppEnvironment = .default,
@@ -255,6 +351,11 @@ public final class LocalUsageSnapshotReader {
         let normalizedDays = max(1, min(days, 90))
         let referenceDate = now()
         let dayKeys = makeDayKeys(days: normalizedDays, referenceDate: referenceDate)
+        if cachedDayKeys != dayKeys {
+            cachedDayKeys = dayKeys
+            fileScanCache.removeAll(keepingCapacity: true)
+        }
+        scannedFilePaths.removeAll(keepingCapacity: true)
         var daily = Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) })
         var modelTotals: [String: Int] = [:]
         var workspaceDaily: [String: [String: DailyTotals]] = [:]
@@ -284,6 +385,7 @@ public final class LocalUsageSnapshotReader {
                 savedWorkspacePaths: savedWorkspacePaths
             )
         }
+        fileScanCache = fileScanCache.filter { scannedFilePaths.contains($0.key) }
 
         let workspaces: [LocalUsageWorkspace] = workspaceDaily.keys.map { path in
             let workspaceSnapshot = buildSnapshot(
@@ -402,36 +504,119 @@ public final class LocalUsageSnapshotReader {
         fileURL: URL,
         dayKeys: [String]
     ) -> ScanResult? {
-        guard let transcript = try? String(contentsOf: fileURL, encoding: .utf8) else {
+        let path = fileURL.path
+        scannedFilePaths.insert(path)
+        guard let attributes = try? fileManager.attributesOfItem(atPath: path),
+              let fileSizeNumber = attributes[.size] as? NSNumber else {
+            return nil
+        }
+        let fileSize = fileSizeNumber.uint64Value
+        let modificationDate = attributes[.modificationDate] as? Date
+
+        let cached = fileScanCache[path]
+        if let cached,
+           cached.fileSize == fileSize,
+           cached.modificationDate == modificationDate {
+            return cached.state.result
+        }
+
+        let canContinue = cached.map {
+            fileSize > $0.fileSize && $0.endedWithNewline
+        } ?? false
+        var state: ScanState
+        let startOffset: UInt64
+        if canContinue, let cached {
+            state = cached.state
+            startOffset = cached.fileSize
+        } else {
+            state = ScanState(daily: Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) }))
+            startOffset = 0
+        }
+
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
+            return nil
+        }
+        defer { try? handle.close() }
+
+        do {
+            try handle.seek(toOffset: startOffset)
+        } catch {
             return nil
         }
 
-        var daily = Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) })
-        var modelTotals: [String: Int] = [:]
-        var workspacePath: String?
-        var previousTotals = UsageTotals()
-        var currentModel: String?
-        var lastActivityMS: Int64?
-        var seenRuns: Set<Int64> = []
+        var pending = Data()
+        var discardingOversizedLine = false
+        var endedWithNewline = startOffset > 0
+        var reachedEnd = false
+        while !reachedEnd {
+            autoreleasepool {
+                guard let chunk = try? handle.read(upToCount: 1_048_576),
+                      !chunk.isEmpty else {
+                    reachedEnd = true
+                    return
+                }
+                var segmentStart = chunk.startIndex
+                while let newline = chunk[segmentStart...].firstIndex(of: 0x0A) {
+                    let segment = chunk[segmentStart..<newline]
+                    if !discardingOversizedLine,
+                       pending.count + segment.count <= Self.maximumRelevantLineSize {
+                        pending.append(segment)
+                        process(line: pending[pending.startIndex..<pending.endIndex], state: &state)
+                    }
+                    pending.removeAll(keepingCapacity: true)
+                    discardingOversizedLine = false
+                    segmentStart = chunk.index(after: newline)
+                    endedWithNewline = true
+                }
 
-        for rawLine in transcript.split(whereSeparator: \.isNewline) {
-            let line = String(rawLine)
-            guard line.utf8.count <= 512_000,
-                  let data = line.data(using: .utf8),
-                  let rawObject = try? JSONSerialization.jsonObject(with: data),
+                if segmentStart < chunk.endIndex {
+                    endedWithNewline = false
+                    guard !discardingOversizedLine else {
+                        return
+                    }
+                    let segment = chunk[segmentStart..<chunk.endIndex]
+                    if pending.count + segment.count <= Self.maximumRelevantLineSize {
+                        pending.append(segment)
+                    } else {
+                        pending.removeAll(keepingCapacity: true)
+                        discardingOversizedLine = true
+                    }
+                }
+            }
+        }
+
+        // A complete JSON value may be the final line even when the writer omitted a trailing newline.
+        if !discardingOversizedLine, !pending.isEmpty {
+            process(line: pending[pending.startIndex..<pending.endIndex], state: &state)
+        }
+
+        fileScanCache[path] = FileScanCache(
+            fileSize: fileSize,
+            modificationDate: modificationDate,
+            endedWithNewline: endedWithNewline,
+            state: state
+        )
+        return state.result
+    }
+
+    private func process(line: Data.SubSequence, state: inout ScanState) {
+        autoreleasepool {
+            guard line.count <= Self.maximumRelevantLineSize,
+                  containsRelevantEvent(in: line),
+                  let rawObject = try? JSONSerialization.jsonObject(with: Data(line)),
                   let object = rawObject as? [String: Any] else {
-                continue
+                return
             }
 
             let entryType = (object["type"] as? String) ?? ""
             if entryType == "turn_context" {
-                currentModel = extractModel(fromTurnContext: object) ?? currentModel
-                continue
+                state.currentModel = extractModel(fromTurnContext: object) ?? state.currentModel
+                return
             }
 
             if entryType == "session_meta" {
-                workspacePath = extractWorkspacePath(fromSessionMeta: object) ?? workspacePath
-                continue
+                state.workspacePath = extractWorkspacePath(fromSessionMeta: object) ?? state.workspacePath
+                return
             }
 
             if entryType == "event_msg" || entryType.isEmpty {
@@ -440,29 +625,29 @@ public final class LocalUsageSnapshotReader {
 
                 if payloadType == "agent_message" {
                     guard let timestampMS = readTimestampMS(from: object) else {
-                        continue
+                        return
                     }
-                    registerAgentRun(timestampMS, daily: &daily, seenRuns: &seenRuns)
-                    trackActivity(timestampMS, daily: &daily, lastActivityMS: &lastActivityMS)
-                    continue
+                    registerAgentRun(timestampMS, daily: &state.daily, seenRuns: &state.seenRuns)
+                    trackActivity(timestampMS, daily: &state.daily, lastActivityMS: &state.lastActivityMS)
+                    return
                 }
 
                 if payloadType == "agent_reasoning" {
                     guard let timestampMS = readTimestampMS(from: object) else {
-                        continue
+                        return
                     }
-                    trackActivity(timestampMS, daily: &daily, lastActivityMS: &lastActivityMS)
-                    continue
+                    trackActivity(timestampMS, daily: &state.daily, lastActivityMS: &state.lastActivityMS)
+                    return
                 }
 
                 guard payloadType == "token_count",
                       let info = payload?["info"] as? [String: Any] else {
-                    continue
+                    return
                 }
 
                 let usage = extractUsage(from: info)
                 guard let usage else {
-                    continue
+                    return
                 }
 
                 var delta = UsageTotals(
@@ -473,73 +658,95 @@ public final class LocalUsageSnapshotReader {
 
                 if usage.usedTotal {
                     delta = UsageTotals(
-                        input: max(0, usage.input - previousTotals.input),
-                        cached: max(0, usage.cached - previousTotals.cached),
-                        output: max(0, usage.output - previousTotals.output)
+                        input: max(0, usage.input - state.previousTotals.input),
+                        cached: max(0, usage.cached - state.previousTotals.cached),
+                        output: max(0, usage.output - state.previousTotals.output)
                     )
-                    previousTotals = UsageTotals(
+                    state.previousTotals = UsageTotals(
                         input: usage.input,
                         cached: usage.cached,
                         output: usage.output
                     )
                 } else {
-                    previousTotals.input += delta.input
-                    previousTotals.cached += delta.cached
-                    previousTotals.output += delta.output
+                    state.previousTotals.input += delta.input
+                    state.previousTotals.cached += delta.cached
+                    state.previousTotals.output += delta.output
                 }
 
                 guard delta.input > 0 || delta.cached > 0 || delta.output > 0 else {
-                    continue
+                    return
                 }
 
                 guard let timestampMS = readTimestampMS(from: object),
                       let dayKey = dayKey(forTimestampMS: timestampMS),
-                      var entry = daily[dayKey] else {
-                    continue
+                      var entry = state.daily[dayKey] else {
+                    return
                 }
 
                 let cached = min(delta.cached, delta.input)
                 entry.input += delta.input
                 entry.cached += cached
                 entry.output += delta.output
-                daily[dayKey] = entry
+                state.daily[dayKey] = entry
 
-                let modelName = currentModel
+                let modelName = state.currentModel
                     ?? extractModel(fromTokenCount: object)
                     ?? "unknown"
-                modelTotals[modelName, default: 0] += delta.input + delta.output
+                state.modelTotals[modelName, default: 0] += delta.input + delta.output
 
-                trackActivity(timestampMS, daily: &daily, lastActivityMS: &lastActivityMS)
-                continue
+                trackActivity(timestampMS, daily: &state.daily, lastActivityMS: &state.lastActivityMS)
+                return
             }
 
             guard entryType == "response_item",
                   let payload = object["payload"] as? [String: Any] else {
-                continue
+                return
             }
 
             let role = payload["role"] as? String
             let payloadType = payload["type"] as? String
             guard let timestampMS = readTimestampMS(from: object) else {
-                continue
+                return
             }
 
             if role == "assistant" {
-                registerAgentRun(timestampMS, daily: &daily, seenRuns: &seenRuns)
-                trackActivity(timestampMS, daily: &daily, lastActivityMS: &lastActivityMS)
-                continue
+                registerAgentRun(timestampMS, daily: &state.daily, seenRuns: &state.seenRuns)
+                trackActivity(timestampMS, daily: &state.daily, lastActivityMS: &state.lastActivityMS)
+                return
             }
 
             if payloadType != "message" {
-                trackActivity(timestampMS, daily: &daily, lastActivityMS: &lastActivityMS)
+                trackActivity(timestampMS, daily: &state.daily, lastActivityMS: &state.lastActivityMS)
             }
         }
+    }
 
-        return ScanResult(
-            workspacePath: workspacePath,
-            daily: daily,
-            modelTotals: modelTotals
-        )
+    private func containsRelevantEvent(in line: Data.SubSequence) -> Bool {
+        line.withUnsafeBytes { rawBuffer in
+            let bytes = rawBuffer.bindMemory(to: UInt8.self)
+            let prefix = Self.jsonTypePrefix
+            // Both the envelope type and nested payload type occur near the start of Codex JSONL entries.
+            let searchLimit = min(bytes.count, 1_024)
+            guard prefix.count < searchLimit else {
+                return false
+            }
+
+            for start in 0...(searchLimit - prefix.count) where bytes[start] == prefix[0] {
+                guard prefix.indices.allSatisfy({ bytes[start + $0] == prefix[$0] }) else {
+                    continue
+                }
+                let valueStart = start + prefix.count
+                for eventType in Self.relevantEventTypes {
+                    guard valueStart + eventType.count <= searchLimit else {
+                        continue
+                    }
+                    if eventType.indices.allSatisfy({ bytes[valueStart + $0] == eventType[$0] }) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
     }
 
     private func buildSnapshot(
