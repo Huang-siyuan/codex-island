@@ -60,6 +60,36 @@ func localUsageSnapshotReaderTracksRunsAndActivityFromIncrementalEvents() throws
 }
 
 @Test
+func localUsageSnapshotReaderAddsOnlyAppendedEventsOnRefresh() throws {
+    let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "usage-growing.jsonl", lines: [
+        #"{"type":"turn_context","payload":{"model":"gpt-5"}}"#,
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":10}}}}"#,
+        "",
+    ])
+    let fileURL = directoryURL(for: "2026-08-08", under: root)
+        .appendingPathComponent("usage-growing.jsonl")
+    let reader = LocalUsageSnapshotReader(
+        sessionsRoots: [root],
+        now: { fixedNow(dayKey: "2026-08-08") }
+    )
+
+    #expect(reader.readSnapshot(days: 7).days.last?.totalTokens == 110)
+
+    let handle = try FileHandle(forWritingTo: fileURL)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":30,"cached_input_tokens":5,"output_tokens":3}}}}"#.utf8
+    ))
+    try handle.close()
+
+    let refreshed = reader.readSnapshot(days: 7)
+    #expect(refreshed.days.last?.inputTokens == 130)
+    #expect(refreshed.days.last?.cachedInputTokens == 25)
+    #expect(refreshed.days.last?.outputTokens == 13)
+    #expect(refreshed.days.last?.totalTokens == 143)
+}
+
+@Test
 func localUsageSnapshotReaderGroupsAndFiltersUsageByWorkspace() throws {
     let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "workspace-a.jsonl", lines: [
         #"{"type":"session_meta","payload":{"cwd":"/Users/demo/project-a/Sources/Feature"}}"#,

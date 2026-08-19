@@ -23,10 +23,6 @@ struct UsageDashboardView: View {
         GridItem(.flexible(minimum: 200), spacing: 12),
         GridItem(.flexible(minimum: 200), spacing: 12),
     ]
-    private let modelColumns = [
-        GridItem(.adaptive(minimum: 140), spacing: 8)
-    ]
-
     init(metric: Binding<UsageDashboardMetric>, snapshot: LocalUsageSnapshot?, language: InterfaceLanguage) {
         _metric = metric
         self.snapshot = snapshot
@@ -585,7 +581,7 @@ struct UsageDashboardView: View {
     }
 
     private var topModelsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             Text(language.text("TOP MODELS", "常用模型"))
                 .font(.system(size: 9, weight: .medium))
                 .tracking(1.5)
@@ -603,29 +599,98 @@ struct UsageDashboardView: View {
                             .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
                     )
             } else {
-                LazyVGrid(columns: modelColumns, alignment: .leading, spacing: 8) {
-                    ForEach(presentation.topModels) { model in
-                        HStack(spacing: 8) {
-                            Text(model.model)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(UsageDashboardPalette.title)
+                HStack(spacing: 18) {
+                    modelShareRing
 
-                            Text("\(formatPercent(model.sharePercent))%")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(UsageDashboardPalette.subtitle)
+                    VStack(spacing: 9) {
+                        ForEach(Array(presentation.topModels.prefix(2).enumerated()), id: \.element.id) { index, model in
+                            modelLegendRow(model, color: modelColor(at: index))
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(cardBackground, in: Capsule())
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
-                        )
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .frame(maxWidth: .infinity)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .frame(maxWidth: .infinity, minHeight: 86, alignment: .topLeading)
+        .padding(12)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    private var modelShareRing: some View {
+        let models = Array(presentation.topModels.prefix(2))
+
+        return ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.12), lineWidth: 6)
+
+            ForEach(Array(models.enumerated()), id: \.element.id) { index, model in
+                Circle()
+                    .trim(
+                        from: modelShareStart(at: index, models: models),
+                        to: modelShareEnd(at: index, models: models)
+                    )
+                    .stroke(
+                        modelColor(at: index),
+                        style: StrokeStyle(lineWidth: 6, lineCap: .butt)
+                    )
+                    .rotationEffect(.degrees(-90))
+            }
+
+            Text("\(formatPercent(models.first?.sharePercent ?? 0))%")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(UsageDashboardPalette.title)
+                .minimumScaleFactor(0.72)
+                .lineLimit(1)
+        }
+        .frame(width: 46, height: 46)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(language.text("Top model share", "首位模型占比"))
+        .accessibilityValue("\(formatPercent(models.first?.sharePercent ?? 0))%")
+    }
+
+    private func modelLegendRow(_ model: LocalUsageModel, color: Color) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+
+            Text(model.model)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(UsageDashboardPalette.title)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer(minLength: 6)
+
+            Text("\(formatPercent(model.sharePercent))%")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(UsageDashboardPalette.subtitle)
+                .monospacedDigit()
+        }
+    }
+
+    private func modelColor(at index: Int) -> Color {
+        index == 0 ? UsageDashboardPalette.accent : Color.white.opacity(0.52)
+    }
+
+    private func modelShareStart(at index: Int, models: [LocalUsageModel]) -> Double {
+        models.prefix(index).reduce(0) { $0 + clampedModelShare($1.sharePercent) }
+    }
+
+    private func modelShareEnd(at index: Int, models: [LocalUsageModel]) -> Double {
+        min(
+            modelShareStart(at: index, models: models) + clampedModelShare(models[index].sharePercent),
+            1
+        )
+    }
+
+    private func clampedModelShare(_ percent: Double) -> Double {
+        min(max(percent / 100, 0), 1)
     }
 
     private var cardBackground: LinearGradient {

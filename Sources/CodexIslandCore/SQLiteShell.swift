@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 
 public enum SQLiteShellError: Error, LocalizedError {
     case commandFailed(String)
@@ -20,33 +21,75 @@ public struct SQLiteShell {
             return []
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = ["-json", databaseURL.path, query]
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        try process.run()
-
-        let out = stdout.fileHandleForReading.readDataToEndOfFile()
-        let err = stderr.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        if process.terminationStatus != 0 {
-            let message = String(decoding: err, as: UTF8.self)
+        var database: OpaquePointer?
+        let openResult = sqlite3_open_v2(
+            databaseURL.path,
+            &database,
+            SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
+            nil
+        )
+        guard openResult == SQLITE_OK, let database else {
+            let message = database.map { String(cString: sqlite3_errmsg($0)) } ?? "Could not open SQLite database"
+            if let database {
+                sqlite3_close(database)
+            }
             throw SQLiteShellError.commandFailed(message)
         }
+        defer { sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 250)
 
-        let trimmed = String(decoding: out, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw SQLiteShellError.commandFailed(String(cString: sqlite3_errmsg(database)))
+        }
+        defer { sqlite3_finalize(statement) }
+
+        var rows: [[String: Any]] = []
+        while true {
+            let stepResult = sqlite3_step(statement)
+            if stepResult == SQLITE_DONE {
+                break
+            }
+            guard stepResult == SQLITE_ROW else {
+                throw SQLiteShellError.commandFailed(String(cString: sqlite3_errmsg(database)))
+            }
+
+            var row: [String: Any] = [:]
+            for columnIndex in 0..<sqlite3_column_count(statement) {
+                guard let rawName = sqlite3_column_name(statement, columnIndex) else {
+                    continue
+                }
+                row[String(cString: rawName)] = value(from: statement, columnIndex: columnIndex)
+            }
+            rows.append(row)
+        }
+
+        guard !rows.isEmpty else {
             return []
         }
-        guard let data = trimmed.data(using: .utf8) else {
-            throw SQLiteShellError.invalidJSON("Could not encode sqlite output")
-        }
+        let data = try JSONSerialization.data(withJSONObject: rows)
         return try JSONDecoder().decode([T].self, from: data)
+    }
+
+    private func value(from statement: OpaquePointer, columnIndex: Int32) -> Any {
+        switch sqlite3_column_type(statement, columnIndex) {
+        case SQLITE_INTEGER:
+            return sqlite3_column_int64(statement, columnIndex)
+        case SQLITE_FLOAT:
+            return sqlite3_column_double(statement, columnIndex)
+        case SQLITE_TEXT:
+            guard let text = sqlite3_column_text(statement, columnIndex) else {
+                return ""
+            }
+            return String(cString: text)
+        case SQLITE_BLOB:
+            guard let bytes = sqlite3_column_blob(statement, columnIndex) else {
+                return Data().base64EncodedString()
+            }
+            let count = Int(sqlite3_column_bytes(statement, columnIndex))
+            return Data(bytes: bytes, count: count).base64EncodedString()
+        default:
+            return NSNull()
+        }
     }
 }

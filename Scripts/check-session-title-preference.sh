@@ -62,6 +62,7 @@ swiftc \
   "$ROOT_DIR/Sources/CodexIslandCore/CodexModels.swift" \
   "$ROOT_DIR/Sources/CodexIslandCore/SessionIndexParser.swift" \
   "$ROOT_DIR/Sources/CodexIslandCore/SessionIndexReader.swift" \
+  "$ROOT_DIR/Sources/CodexIslandCore/SQLiteShell.swift" \
   "$ROOT_DIR/Sources/CodexIslandCore/CodexStateStore.swift" \
   "$TMP_DIR/main.swift"
 

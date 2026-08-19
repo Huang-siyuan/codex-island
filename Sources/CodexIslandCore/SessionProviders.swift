@@ -40,7 +40,12 @@ public struct ProviderPollResult: Sendable, Equatable {
 
 public protocol SessionProvider: AnyObject {
     var kind: ProviderKind { get }
+    var minimumPollingInterval: TimeInterval { get }
     func poll() throws -> ProviderPollResult
+}
+
+public extension SessionProvider {
+    var minimumPollingInterval: TimeInterval { 1 }
 }
 
 public final class CodexSessionProvider: SessionProvider {
@@ -51,6 +56,9 @@ public final class CodexSessionProvider: SessionProvider {
     private let previewParser: SessionPreviewParser
     private let store: CodexStateStore
     private var lastSeenLogIDByThread: [String: Int64]
+    private var lastDataVersion: DataSourceVersion?
+    private var cachedThreadSnapshots: [ThreadSnapshot] = []
+    private var hasCachedResult = false
 
     public init(
         trackedThreadLimit: Int = 3,
@@ -67,6 +75,16 @@ public final class CodexSessionProvider: SessionProvider {
     }
 
     public func poll() throws -> ProviderPollResult {
+        let dataVersion = store.currentDataVersion()
+        if hasCachedResult, dataVersion == lastDataVersion {
+            return ProviderPollResult(
+                provider: kind,
+                threadSnapshots: cachedThreadSnapshots,
+                logEvents: [],
+                messagePreviews: []
+            )
+        }
+
         let threads = try store.fetchRecentThreads()
         let trackedThreads = Array(threads.prefix(trackedThreadLimit))
         let afterIDsByThread = trackedThreads.reduce(into: [String: Int64]()) { partialResult, thread in
@@ -87,21 +105,30 @@ public final class CodexSessionProvider: SessionProvider {
             logEvents.append(contentsOf: rows.compactMap(parser.parse(row:)))
         }
 
-        return ProviderPollResult(
+        let result = ProviderPollResult(
             provider: kind,
             threadSnapshots: threads,
             logEvents: logEvents,
             messagePreviews: previews
         )
+        lastDataVersion = dataVersion
+        cachedThreadSnapshots = threads
+        hasCachedResult = true
+        return result
     }
 }
 
 public final class ClaudeCodeSessionProvider: SessionProvider {
     public let kind: ProviderKind = .claudeCode
+    public let minimumPollingInterval: TimeInterval = 2
 
     private let environment: AppEnvironment
     private let parser: ClaudeTranscriptParser
     private let sessionLimit: Int
+    private var lastDataVersion: DataSourceVersion?
+    private var cachedThreadSnapshots: [ThreadSnapshot] = []
+    private var hasCachedResult = false
+    private var knownTranscriptFiles: [URL] = []
 
     public init(
         environment: AppEnvironment = .default,
@@ -118,6 +145,16 @@ public final class ClaudeCodeSessionProvider: SessionProvider {
             return ProviderPollResult(provider: kind, threadSnapshots: [], logEvents: [], messagePreviews: [])
         }
 
+        let dataVersion = currentDataVersion()
+        if hasCachedResult, dataVersion == lastDataVersion {
+            return ProviderPollResult(
+                provider: kind,
+                threadSnapshots: cachedThreadSnapshots,
+                logEvents: [],
+                messagePreviews: []
+            )
+        }
+
         let files = try recentTranscriptFiles(limit: sessionLimit)
         let materials = try files.compactMap { fileURL -> ProviderSessionMaterial? in
             let transcript = try String(contentsOf: fileURL, encoding: .utf8)
@@ -132,7 +169,7 @@ public final class ClaudeCodeSessionProvider: SessionProvider {
             )
         }
 
-        return ProviderPollResult(
+        let result = ProviderPollResult(
             provider: kind,
             threadSnapshots: materials.map(\.threadSnapshot),
             logEvents: materials.compactMap(\.event),
@@ -140,6 +177,18 @@ public final class ClaudeCodeSessionProvider: SessionProvider {
                 [material.userPreview, material.assistantPreview].compactMap { $0 }
             }
         )
+        knownTranscriptFiles = files
+        lastDataVersion = currentDataVersion()
+        cachedThreadSnapshots = result.threadSnapshots
+        hasCachedResult = true
+        return result
+    }
+
+    private func currentDataVersion() -> DataSourceVersion {
+        let parentDirectories = Set(knownTranscriptFiles.map { $0.deletingLastPathComponent() })
+        return DataSourceVersion.capture(files: [environment.claudeProjectsDirectory]
+            + Array(parentDirectories)
+            + knownTranscriptFiles)
     }
 
     private func recentTranscriptFiles(limit: Int) throws -> [URL] {
@@ -305,10 +354,14 @@ public struct CodeBuddySessionBuilder {
 
 public final class CodeBuddySessionProvider: SessionProvider {
     public let kind: ProviderKind = .codeBuddy
+    public let minimumPollingInterval: TimeInterval = 2
 
     private let store: CodeBuddyStateStore
     private let builder: CodeBuddySessionBuilder
     private let sessionLimit: Int
+    private var lastDataVersion: DataSourceVersion?
+    private var cachedThreadSnapshots: [ThreadSnapshot] = []
+    private var hasCachedResult = false
 
     public init(
         store: CodeBuddyStateStore = CodeBuddyStateStore(),
@@ -321,8 +374,22 @@ public final class CodeBuddySessionProvider: SessionProvider {
     }
 
     public func poll() throws -> ProviderPollResult {
+        let cachedConversationIDs = Set(cachedThreadSnapshots.map(\.threadID))
+        let dataVersion = store.currentDataVersion(conversationIDs: cachedConversationIDs)
+        if hasCachedResult, dataVersion == lastDataVersion {
+            return ProviderPollResult(
+                provider: kind,
+                threadSnapshots: cachedThreadSnapshots,
+                logEvents: [],
+                messagePreviews: []
+            )
+        }
+
         let sessions = try store.fetchRecentSessions(limit: sessionLimit)
         guard !sessions.isEmpty else {
+            lastDataVersion = dataVersion
+            cachedThreadSnapshots = []
+            hasCachedResult = true
             return ProviderPollResult(provider: kind, threadSnapshots: [], logEvents: [], messagePreviews: [])
         }
 
@@ -337,7 +404,7 @@ public final class CodeBuddySessionProvider: SessionProvider {
             )
         }
 
-        return ProviderPollResult(
+        let result = ProviderPollResult(
             provider: kind,
             threadSnapshots: materials.map(\.threadSnapshot),
             logEvents: materials.compactMap(\.event),
@@ -345,15 +412,32 @@ public final class CodeBuddySessionProvider: SessionProvider {
                 [material.userPreview, material.assistantPreview].compactMap { $0 }
             }
         )
+        lastDataVersion = dataVersion
+        cachedThreadSnapshots = result.threadSnapshots
+        hasCachedResult = true
+        return result
     }
 }
 
 public final class CodeBuddyStateStore {
     private let environment: AppEnvironment
     private let shell = SQLiteShell()
+    private var historyFileURLs: [URL] = []
 
     public init(environment: AppEnvironment = .default) {
         self.environment = environment
+    }
+
+    func currentDataVersion(conversationIDs: Set<String>) -> DataSourceVersion {
+        let todoFiles = conversationIDs.map {
+            environment.codeBuddyTodosDirectory.appendingPathComponent("\($0).json")
+        }
+        return DataSourceVersion.capture(files: [
+            environment.codeBuddySessionsStoreURL,
+            URL(fileURLWithPath: environment.codeBuddySessionsStoreURL.path + "-wal"),
+            environment.codeBuddyTodosDirectory,
+            environment.codeBuddyGenieHistoryDirectory,
+        ] + todoFiles + historyFileURLs)
     }
 
     public func fetchRecentSessions(limit: Int = 6) throws -> [CodeBuddySessionRecord] {
@@ -407,12 +491,14 @@ public final class CodeBuddyStateStore {
             return [:]
         }
 
-        return try enumerator.reduce(into: [String: Date]()) { partialResult, element in
+        var discoveredHistoryFiles: [URL] = []
+        let history = try enumerator.reduce(into: [String: Date]()) { partialResult, element in
             guard let fileURL = element as? URL,
                   fileURL.lastPathComponent == "current.json",
                   (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
                 return
             }
+            discoveredHistoryFiles.append(fileURL)
 
             let data = try Data(contentsOf: fileURL)
             let payload = try JSONDecoder().decode(CodeBuddyHistoryPayload.self, from: data)
@@ -422,6 +508,8 @@ public final class CodeBuddyStateStore {
             }
             partialResult[payload.conversationID] = max(partialResult[payload.conversationID] ?? .distantPast, updatedAt)
         }
+        historyFileURLs = discoveredHistoryFiles
+        return history
     }
 
     private func decodeSessionRecord(_ rawValue: String) -> CodeBuddySessionRecord? {
