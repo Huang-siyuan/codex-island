@@ -29,6 +29,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewModel.onUsageRequested = { [weak self] in
             self?.loadUsageSnapshotIfNeeded()
         }
+        Task { [weak self] in
+            guard let self,
+                  await usageSnapshotLoader.needsRefreshForCurrentDay() else {
+                return
+            }
+            loadUsageSnapshotIfNeeded()
+        }
         panelController?.show()
         installPositionObservers()
         scheduleLaunchReposition()

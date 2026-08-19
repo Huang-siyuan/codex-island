@@ -32,6 +32,16 @@ public actor UsageSnapshotLoader {
         cachedSnapshot
     }
 
+    public func needsRefreshForCurrentDay(
+        now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> Bool {
+        guard let lastRefreshAt else {
+            return true
+        }
+        return !calendar.isDate(lastRefreshAt, inSameDayAs: now)
+    }
+
     public func snapshot(now: Date = Date()) -> LocalUsageSnapshot {
         if let cachedSnapshot,
            let lastRefreshAt,
