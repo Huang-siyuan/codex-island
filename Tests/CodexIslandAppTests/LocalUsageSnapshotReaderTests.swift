@@ -3,6 +3,24 @@ import Testing
 @testable import CodexIslandCore
 
 @Test
+func usageSnapshotLoaderDetectsDayRollover() async throws {
+    let cacheURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+        .appendingPathComponent("usage-snapshot.json")
+    try FileManager.default.createDirectory(
+        at: cacheURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    let previousDay = fixedNow(dayKey: "2026-08-18")
+    let snapshot = LocalUsageSnapshot.empty(days: 30, now: previousDay)
+    try JSONEncoder().encode(snapshot).write(to: cacheURL)
+    let loader = UsageSnapshotLoader(cacheURL: cacheURL)
+
+    #expect(await !loader.needsRefreshForCurrentDay(now: previousDay))
+    #expect(await loader.needsRefreshForCurrentDay(now: fixedNow(dayKey: "2026-08-19")))
+}
+
+@Test
 func localUsageSnapshotReaderAccumulatesTotalUsageByDelta() throws {
     let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "usage-total.jsonl", lines: [
         #"{"type":"turn_context","payload":{"model":"gpt-5"}}"#,

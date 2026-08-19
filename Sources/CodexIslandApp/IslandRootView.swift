@@ -178,6 +178,9 @@ struct IslandRootView: View {
             snapshot: viewModel.usageSnapshot,
             language: language
         )
+        .onAppear {
+            viewModel.refreshUsageIfSelected()
+        }
     }
 
     private var expandedTabPicker: some View {
