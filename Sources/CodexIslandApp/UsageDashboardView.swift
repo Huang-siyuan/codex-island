@@ -723,9 +723,9 @@ struct UsageDashboardView: View {
             Color(red: 0.055, green: 0.06, blue: 0.07).opacity(0.99)
         case .macOSGlass:
             ZStack {
-                Rectangle().fill(.ultraThinMaterial)
+                MacOSVisualEffectView(material: .popover)
                 LinearGradient(
-                    colors: [Color.white.opacity(0.10), Color.black.opacity(0.22)],
+                    colors: [Color.white.opacity(0.07), Color.clear],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -740,8 +740,8 @@ struct UsageDashboardView: View {
             Color.black.opacity(0.94)
         case .macOSGlass:
             ZStack {
-                Rectangle().fill(.ultraThinMaterial)
-                Color.black.opacity(0.30)
+                MacOSVisualEffectView(material: .popover)
+                Color.white.opacity(0.04)
             }
         }
     }

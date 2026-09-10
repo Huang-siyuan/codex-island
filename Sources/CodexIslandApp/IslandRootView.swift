@@ -454,9 +454,9 @@ struct IslandRootView: View {
             shellShape.fill(shellGradient)
         case .macOSGlass:
             ZStack {
-                shellShape.fill(.ultraThinMaterial)
-                shellShape.fill(Color.black.opacity(0.46))
-                shellShape.fill(glassTintGradient)
+                MacOSVisualEffectView()
+                Color.black.opacity(0.12)
+                glassTintGradient
             }
         }
     }
@@ -467,23 +467,16 @@ struct IslandRootView: View {
         case .classic:
             shellShape.strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
         case .macOSGlass:
-            shellShape.strokeBorder(
-                LinearGradient(
-                    colors: [Color.white.opacity(0.48), Color.white.opacity(0.10)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 1
-            )
+            shellShape.strokeBorder(Color.clear, lineWidth: 0)
         }
     }
 
     private var glassTintGradient: LinearGradient {
         LinearGradient(
             colors: [
-                Color.white.opacity(0.06),
-                Color(red: 0.10, green: 0.15, blue: 0.23).opacity(0.28),
-                Color.black.opacity(0.18),
+                Color.white.opacity(0.07),
+                Color(red: 0.16, green: 0.24, blue: 0.36).opacity(0.05),
+                Color.clear,
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
