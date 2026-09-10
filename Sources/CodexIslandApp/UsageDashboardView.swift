@@ -723,9 +723,12 @@ struct UsageDashboardView: View {
             Color(red: 0.055, green: 0.06, blue: 0.07).opacity(0.99)
         case .macOSGlass:
             ZStack {
-                MacOSVisualEffectView(material: .popover)
+                MacOSVisualEffectView(material: .hudWindow)
                 LinearGradient(
-                    colors: [Color.white.opacity(0.07), Color.clear],
+                    colors: [
+                        Color(red: 0.30, green: 0.12, blue: 0.46).opacity(0.30),
+                        Color(red: 0.02, green: 0.38, blue: 0.76).opacity(0.28),
+                    ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -740,8 +743,8 @@ struct UsageDashboardView: View {
             Color.black.opacity(0.94)
         case .macOSGlass:
             ZStack {
-                MacOSVisualEffectView(material: .popover)
-                Color.white.opacity(0.04)
+                MacOSVisualEffectView(material: .hudWindow)
+                Color(red: 0.12, green: 0.24, blue: 0.46).opacity(0.16)
             }
         }
     }

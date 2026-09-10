@@ -8,7 +8,7 @@ struct MacOSVisualEffectView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.state = .active
-        view.isEmphasized = false
+        view.isEmphasized = true
         configure(view)
         return view
     }
@@ -18,6 +18,7 @@ struct MacOSVisualEffectView: NSViewRepresentable {
     }
 
     private func configure(_ view: NSVisualEffectView) {
+        view.appearance = NSAppearance(named: .darkAqua)
         view.material = material
         view.blendingMode = blendingMode
     }

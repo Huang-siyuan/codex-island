@@ -454,9 +454,9 @@ struct IslandRootView: View {
             shellShape.fill(shellGradient)
         case .macOSGlass:
             ZStack {
-                MacOSVisualEffectView()
-                Color.black.opacity(0.12)
+                MacOSVisualEffectView(material: .hudWindow)
                 glassTintGradient
+                glassHighlightGradient
             }
         }
     }
@@ -467,19 +467,42 @@ struct IslandRootView: View {
         case .classic:
             shellShape.strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
         case .macOSGlass:
-            shellShape.strokeBorder(Color.clear, lineWidth: 0)
+            shellShape.strokeBorder(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.52),
+                        Color.white.opacity(0.18),
+                        Color(red: 0.30, green: 0.68, blue: 1.0).opacity(0.28),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
         }
     }
 
     private var glassTintGradient: LinearGradient {
         LinearGradient(
             colors: [
-                Color.white.opacity(0.07),
-                Color(red: 0.16, green: 0.24, blue: 0.36).opacity(0.05),
-                Color.clear,
+                Color(red: 0.28, green: 0.10, blue: 0.44).opacity(0.22),
+                Color(red: 0.08, green: 0.17, blue: 0.38).opacity(0.16),
+                Color(red: 0.02, green: 0.34, blue: 0.72).opacity(0.20),
             ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+
+    private var glassHighlightGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(0.13),
+                Color.clear,
+                Color.black.opacity(0.08),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
         )
     }
 
