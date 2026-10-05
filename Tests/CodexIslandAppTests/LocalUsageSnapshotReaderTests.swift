@@ -56,6 +56,48 @@ func usageSnapshotLoaderRebuildsRecentProjectOnlyCache(schemaVersion: Int?) asyn
 }
 
 @Test
+func usageSnapshotLoaderManualRefreshBypassesAndReplacesRecentCache() async throws {
+    let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "usage-growing.jsonl", lines: [
+        #"{"type":"turn_context","payload":{"model":"gpt-5"}}"#,
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":10}}}}"#,
+        "",
+    ])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let now = fixedNow(dayKey: "2026-08-08")
+    let cacheURL = root.appendingPathComponent("usage-snapshot.json")
+    let reader = LocalUsageSnapshotReader(sessionsRoots: [root], savedWorkspaceRoots: [], now: { now })
+    let loader = UsageSnapshotLoader(reader: reader, cacheURL: cacheURL)
+    let initial = await loader.snapshot(now: now)
+    #expect(initial.totals.last30DaysTokens == 110)
+
+    let fileURL = directoryURL(for: "2026-08-08", under: root)
+        .appendingPathComponent("usage-growing.jsonl")
+    let handle = try FileHandle(forWritingTo: fileURL)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":30,"cached_input_tokens":5,"output_tokens":3}}}}"#.utf8
+    ))
+    try handle.close()
+
+    let refreshTime = now.addingTimeInterval(60)
+    #expect(await loader.snapshot(now: refreshTime) == initial)
+    let refreshed = await loader.snapshot(forceRefresh: true, now: refreshTime)
+    #expect(refreshed.days.last?.inputTokens == 130)
+    #expect(refreshed.days.last?.cachedInputTokens == 25)
+    #expect(refreshed.days.last?.outputTokens == 13)
+    #expect(refreshed.totals.last30DaysTokens == 143)
+    #expect(refreshed.workspaces.first?.totals.last30DaysTokens == 143)
+    #expect(await loader.cached() == refreshed)
+    #expect(await loader.snapshot(now: refreshTime.addingTimeInterval(60)) == refreshed)
+    #expect(await loader.snapshot(forceRefresh: true, now: refreshTime.addingTimeInterval(120)) == refreshed)
+
+    let reloadedReader = LocalUsageSnapshotReader(sessionsRoots: [root], savedWorkspaceRoots: [], now: { now })
+    let reloaded = UsageSnapshotLoader(reader: reloadedReader, cacheURL: cacheURL)
+    #expect(await reloaded.cached() == refreshed)
+    #expect(await reloaded.snapshot(now: refreshTime.addingTimeInterval(180)) == refreshed)
+}
+
+@Test
 func localUsageSnapshotReaderAccumulatesTotalUsageByDelta() throws {
     let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "usage-total.jsonl", lines: [
         #"{"type":"turn_context","payload":{"model":"gpt-5"}}"#,

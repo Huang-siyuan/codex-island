@@ -180,7 +180,9 @@ struct IslandRootView: View {
             metric: $viewModel.usageMetric,
             snapshot: viewModel.usageSnapshot,
             language: language,
-            appearance: appearance
+            appearance: appearance,
+            isRefreshing: viewModel.isUsageRefreshing,
+            onRefresh: viewModel.requestUsageRefresh
         )
         .onAppear {
             viewModel.refreshUsageIfSelected()

@@ -43,8 +43,11 @@ public actor UsageSnapshotLoader {
         return !calendar.isDate(lastRefreshAt, inSameDayAs: now)
     }
 
-    public func snapshot(now: Date = Date()) -> LocalUsageSnapshot {
-        if let cachedSnapshot,
+    public func snapshot(forceRefresh: Bool = false, now: Date = Date()) -> LocalUsageSnapshot {
+        // Manual refresh bypasses the snapshot's age gate, but keeps the reader's
+        // per-file cache so unchanged transcripts are not parsed again.
+        if !forceRefresh,
+           let cachedSnapshot,
            let lastRefreshAt,
            now.timeIntervalSince(lastRefreshAt) < refreshInterval {
             return cachedSnapshot
