@@ -17,6 +17,7 @@ struct IslandRootView: View {
     @State private var lastReportedSize: CGSize = .zero
     @State private var lastReportedTopAttachmentOverlap: CGFloat = -.greatestFiniteMagnitude
     @AppStorage("interfaceLanguage") private var interfaceLanguageRaw = InterfaceLanguage.english.rawValue
+    @AppStorage("islandAppearance") private var islandAppearanceRaw = IslandAppearance.classic.rawValue
 
     var body: some View {
         islandCard
@@ -60,11 +61,10 @@ struct IslandRootView: View {
         .frame(height: isExpanded ? nil : compactShellHeight, alignment: .center)
         .fixedSize(horizontal: false, vertical: true)
         .background {
-            shellShape.fill(shellGradient)
+            shellBackground
         }
         .overlay {
-            shellShape
-                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+            shellBorder
         }
         .clipShape(shellShape)
         .contentShape(Rectangle())
@@ -74,6 +74,7 @@ struct IslandRootView: View {
         }
         .animation(shellExpandAnimation, value: viewModel.selectedExpandedTab)
         .animation(shellExpandAnimation, value: interfaceLanguageRaw)
+        .animation(.easeInOut(duration: 0.22), value: islandAppearanceRaw)
         .onTapGesture {
             guard !isExpanded else {
                 return
@@ -138,6 +139,8 @@ struct IslandRootView: View {
 
     private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 14) {
+            appearanceSelector
+
             Group {
                 switch viewModel.selectedExpandedTab {
                 case .sessions:
@@ -176,7 +179,8 @@ struct IslandRootView: View {
         UsageDashboardView(
             metric: $viewModel.usageMetric,
             snapshot: viewModel.usageSnapshot,
-            language: language
+            language: language,
+            appearance: appearance
         )
         .onAppear {
             viewModel.refreshUsageIfSelected()
@@ -222,7 +226,43 @@ struct IslandRootView: View {
                 }
                 .buttonStyle(.plain)
             }
+
         }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var appearanceSelector: some View {
+        HStack(spacing: 10) {
+            Label(language.text("Appearance", "外观"), systemImage: "paintbrush.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.58))
+
+            Spacer()
+
+            HStack(spacing: 4) {
+                ForEach(IslandAppearance.allCases) { option in
+                    Button {
+                        islandAppearanceRaw = option.rawValue
+                    } label: {
+                        Text(option.title(language: language))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(option == appearance ? Color.white : Color.white.opacity(0.60))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                option == appearance ? Color.white.opacity(0.13) : Color.clear,
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(option == appearance ? .isSelected : [])
+                }
+            }
+            .padding(3)
+            .background(Color.white.opacity(0.045), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
+        }
+        .padding(.horizontal, 2)
     }
 
     private var languageToggleButton: some View {
@@ -407,6 +447,65 @@ struct IslandRootView: View {
         )
     }
 
+    @ViewBuilder
+    private var shellBackground: some View {
+        switch appearance {
+        case .classic:
+            shellShape.fill(shellGradient)
+        case .macOSGlass:
+            ZStack {
+                MacOSVisualEffectView(material: .hudWindow)
+                glassTintGradient
+                glassHighlightGradient
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var shellBorder: some View {
+        switch appearance {
+        case .classic:
+            shellShape.strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+        case .macOSGlass:
+            shellShape.strokeBorder(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.52),
+                        Color.white.opacity(0.18),
+                        Color(red: 0.30, green: 0.68, blue: 1.0).opacity(0.28),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
+        }
+    }
+
+    private var glassTintGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 0.28, green: 0.10, blue: 0.44).opacity(0.22),
+                Color(red: 0.08, green: 0.17, blue: 0.38).opacity(0.16),
+                Color(red: 0.02, green: 0.34, blue: 0.72).opacity(0.20),
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+
+    private var glassHighlightGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(0.13),
+                Color.clear,
+                Color.black.opacity(0.08),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
     private var expandedWidth: CGFloat {
         760
     }
@@ -489,6 +588,10 @@ struct IslandRootView: View {
 
     private var language: InterfaceLanguage {
         InterfaceLanguage(rawValue: interfaceLanguageRaw) ?? .english
+    }
+
+    private var appearance: IslandAppearance {
+        IslandAppearance(rawValue: islandAppearanceRaw) ?? .classic
     }
 
     private var localizedThreadTitle: String {

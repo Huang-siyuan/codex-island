@@ -5,6 +5,7 @@ struct UsageDashboardView: View {
     @Binding var metric: UsageDashboardMetric
     let snapshot: LocalUsageSnapshot?
     let language: InterfaceLanguage
+    let appearance: IslandAppearance
     @AppStorage("workspaceSortMode") private var workspaceSortModeRaw = WorkspaceSortMode.usage.rawValue
     @State private var hoveredChartBarID: String?
     @State private var hoveredStatCardID: String?
@@ -23,10 +24,16 @@ struct UsageDashboardView: View {
         GridItem(.flexible(minimum: 200), spacing: 12),
         GridItem(.flexible(minimum: 200), spacing: 12),
     ]
-    init(metric: Binding<UsageDashboardMetric>, snapshot: LocalUsageSnapshot?, language: InterfaceLanguage) {
+    init(
+        metric: Binding<UsageDashboardMetric>,
+        snapshot: LocalUsageSnapshot?,
+        language: InterfaceLanguage,
+        appearance: IslandAppearance
+    ) {
         _metric = metric
         self.snapshot = snapshot
         self.language = language
+        self.appearance = appearance
     }
 
     private var filteredSnapshot: LocalUsageSnapshot? {
@@ -266,7 +273,9 @@ struct UsageDashboardView: View {
             .frame(height: listHeight)
         }
         .frame(width: 270)
-        .background(Color(red: 0.055, green: 0.06, blue: 0.07).opacity(0.99))
+        .background {
+            floatingPanelBackground
+        }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -588,7 +597,10 @@ struct UsageDashboardView: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
-        .background(Color.black.opacity(0.94), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background {
+            tooltipBackground
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
@@ -728,6 +740,39 @@ struct UsageDashboardView: View {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+
+    @ViewBuilder
+    private var floatingPanelBackground: some View {
+        switch appearance {
+        case .classic:
+            Color(red: 0.055, green: 0.06, blue: 0.07).opacity(0.99)
+        case .macOSGlass:
+            ZStack {
+                MacOSVisualEffectView(material: .hudWindow)
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.30, green: 0.12, blue: 0.46).opacity(0.30),
+                        Color(red: 0.02, green: 0.38, blue: 0.76).opacity(0.28),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tooltipBackground: some View {
+        switch appearance {
+        case .classic:
+            Color.black.opacity(0.94)
+        case .macOSGlass:
+            ZStack {
+                MacOSVisualEffectView(material: .hudWindow)
+                Color(red: 0.12, green: 0.24, blue: 0.46).opacity(0.16)
+            }
+        }
     }
 
     private var updatedLabel: String {

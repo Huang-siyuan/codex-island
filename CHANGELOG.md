@@ -21,6 +21,26 @@ All notable changes to Codex Island are recorded here.
 - A read-only scan of current-day local transcripts counted previously excluded topic usage and confirmed that the sum of group totals equals overall usage.
 - `git diff --check` passed.
 
+### Added
+
+- Added a persistent appearance switch between Classic Dark and macOS Glass.
+- Added a native macOS glass backdrop that samples and blurs content behind the island window.
+
+### Improved
+
+- Matched the macOS Dock more closely with a dark HUD material, purple-to-blue environmental tint, top highlight, and thin luminous border.
+- Applied the glass treatment consistently to the Usage workspace menu and chart tooltip.
+
+### Fixed
+
+- Removed the opaque gray layer and outer corner shadow that made the glass appearance look like a solid panel.
+
+### Verification
+
+- `swift test`: 57 tests passed.
+- Window chrome and active-screen-following checks passed.
+- Integration verification on 2026-10-05: merged the projectless-usage fix from `main` while retaining both appearance modes; `swift build --jobs 2` succeeded and `swift test --jobs 2` passed all 61 tests.
+
 ## [v0.2.1] - 2026-08-11
 
 ### Added
