@@ -6,6 +6,8 @@ struct UsageDashboardView: View {
     let snapshot: LocalUsageSnapshot?
     let language: InterfaceLanguage
     let appearance: IslandAppearance
+    let isRefreshing: Bool
+    let onRefresh: () -> Void
     @AppStorage("workspaceSortMode") private var workspaceSortModeRaw = WorkspaceSortMode.usage.rawValue
     @State private var hoveredChartBarID: String?
     @State private var hoveredStatCardID: String?
@@ -28,12 +30,16 @@ struct UsageDashboardView: View {
         metric: Binding<UsageDashboardMetric>,
         snapshot: LocalUsageSnapshot?,
         language: InterfaceLanguage,
-        appearance: IslandAppearance
+        appearance: IslandAppearance,
+        isRefreshing: Bool,
+        onRefresh: @escaping () -> Void
     ) {
         _metric = metric
         self.snapshot = snapshot
         self.language = language
         self.appearance = appearance
+        self.isRefreshing = isRefreshing
+        self.onRefresh = onRefresh
     }
 
     private var filteredSnapshot: LocalUsageSnapshot? {
@@ -108,6 +114,8 @@ struct UsageDashboardView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(UsageDashboardPalette.muted)
 
+            refreshButton
+
             HStack(spacing: 4) {
                 ForEach(UsageDashboardMetric.allCases) { currentMetric in
                     Button {
@@ -143,6 +151,39 @@ struct UsageDashboardView: View {
             )
         }
         .zIndex(50)
+    }
+
+    private var refreshButton: some View {
+        Button(action: onRefresh) {
+            HStack(spacing: 5) {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .frame(width: 12, height: 12)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 12, height: 12)
+                }
+
+                Text(isRefreshing
+                    ? language.text("Refreshing", "刷新中")
+                    : language.text("Refresh", "刷新"))
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .foregroundStyle(isRefreshing ? UsageDashboardPalette.muted : UsageDashboardPalette.title)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(Color.white.opacity(0.07), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
+        .disabled(isRefreshing)
+        .help(language.text("Refresh local usage now", "立即刷新本地用量"))
+        .accessibilityLabel(language.text("Refresh usage", "刷新用量"))
+        .accessibilityValue(isRefreshing ? language.text("Refreshing", "刷新中") : language.text("Ready", "就绪"))
+        .accessibilityHint(language.text("Reload usage from local session records", "重新读取本地会话记录的用量"))
     }
 
     private var workspacePill: some View {

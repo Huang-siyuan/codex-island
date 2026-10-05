@@ -59,12 +59,14 @@ final class IslandViewModel: ObservableObject {
     @Published var selectedExpandedTab: IslandExpandedTab = .sessions
     @Published var usageMetric: UsageDashboardMetric = .tokens
     @Published var usageSnapshot: LocalUsageSnapshot?
+    @Published var isUsageRefreshing = false
     @Published var compactBarHeight: CGFloat = 32
     @Published var compactBarWidth: CGFloat = IslandStatusPresentation.preferredCompactWidth
     @Published var compactTopAttachmentOverlap: CGFloat = MenuBarGeometry.resolvedCompactTopAttachmentOverlap(
         visibleHeight: 32
     )
     var onUsageRequested: (() -> Void)?
+    var onUsageRefreshRequested: (() -> Void)?
 
     private let focusRouter: FocusRouter
     private let soundPreferenceStore: SoundPreferenceStore
@@ -109,6 +111,13 @@ final class IslandViewModel: ObservableObject {
             return
         }
         onUsageRequested?()
+    }
+
+    func requestUsageRefresh() {
+        guard !isUsageRefreshing else {
+            return
+        }
+        onUsageRefreshRequested?()
     }
 
     func applyUsageSnapshot(_ snapshot: LocalUsageSnapshot) {

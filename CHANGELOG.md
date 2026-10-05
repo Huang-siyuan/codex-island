@@ -6,17 +6,23 @@ All notable changes to Codex Island are recorded here.
 
 ### Fixed — 2026-10-05
 
+- Added a localized manual refresh button beside the Usage dashboard's update time, with a progress indicator and disabled state while a refresh is running.
+- Manual refresh now bypasses the 30-minute snapshot cache while retaining incremental transcript reads. Ordinary requests keep the existing cache interval; no background refresh timer was added.
 - Included topic and projectless Codex sessions in overall token usage, active time, run counts, cache statistics, and model totals. Imported workspace roots now control grouping instead of excluding sessions from the aggregate.
 - Added a localized "Topics / No project" group for sessions outside imported workspaces or without a working directory, and renamed the aggregate filter to "All sessions".
 - Invalidated snapshots produced by the previous project-only accounting so the first load after upgrading rebuilds the cached totals.
 
 ### Development notes
 
+- A pushed source fix does not replace the installed app. The running bundle was still an older build, so the updated app must be packaged, installed, and relaunched for the accounting and refresh controls to appear.
+- Manual and automatic usage requests share one in-flight task. The button cannot queue duplicate scans, and unchanged transcript files keep their parsed results in memory.
 - The earlier workspace filter skipped unmatched sessions before merging overall usage. Group assignment now happens after that merge; project subdirectories still resolve to the most specific imported root.
 - Kept the existing local transcript source and 30-day scan window. This change does not add cloud or archived-session data sources.
 
 ### Verification
 
+- Manual refresh: `swift build --jobs 2` succeeded and `swift test --jobs 2` passed all 62 tests. The added regression covers a recent cached snapshot, appended usage visible only after forcing refresh, repeated refresh without double counting, and persisted cache reload.
+- Installed and relaunched the release bundle: verified nonzero current-day topic usage, the topic filter, preserved macOS Glass, and a manual refresh updating both totals and timestamp. A 15-second idle observation found no usage-cache rewrite; installed and packaged executables match and code signing verification passed.
 - `swift build` succeeded; `swift test` passed all 61 tests, including projectless grouping, scoped-total reconciliation, incremental refresh, and cache migration coverage.
 - A read-only scan of current-day local transcripts counted previously excluded topic usage and confirmed that the sum of group totals equals overall usage.
 - `git diff --check` passed.

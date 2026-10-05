@@ -29,6 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewModel.onUsageRequested = { [weak self] in
             self?.loadUsageSnapshotIfNeeded()
         }
+        viewModel.onUsageRefreshRequested = { [weak self] in
+            self?.loadUsageSnapshotIfNeeded(forceRefresh: true)
+        }
         Task { [weak self] in
             guard let self,
                   await usageSnapshotLoader.needsRefreshForCurrentDay() else {
@@ -80,25 +83,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func loadUsageSnapshotIfNeeded() {
+    private func loadUsageSnapshotIfNeeded(forceRefresh: Bool = false) {
         guard usageSnapshotTask == nil else {
             return
         }
 
+        viewModel.isUsageRefreshing = true
         usageSnapshotTask = Task(priority: .background) { [weak self] in
             guard let self else {
                 return
             }
+            defer {
+                viewModel.isUsageRefreshing = false
+                usageSnapshotTask = nil
+            }
             if let cachedSnapshot = await usageSnapshotLoader.cached() {
                 viewModel.applyUsageSnapshot(cachedSnapshot)
             }
-            let snapshot = await usageSnapshotLoader.snapshot()
+            let snapshot = await usageSnapshotLoader.snapshot(forceRefresh: forceRefresh)
             guard !Task.isCancelled else {
-                usageSnapshotTask = nil
                 return
             }
             viewModel.applyUsageSnapshot(snapshot)
-            usageSnapshotTask = nil
         }
     }
 
