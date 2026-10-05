@@ -22,7 +22,8 @@ public actor UsageSnapshotLoader {
             .appendingPathComponent("usage-snapshot.json")
 
         if let data = try? Data(contentsOf: self.cacheURL),
-           let snapshot = try? JSONDecoder().decode(LocalUsageSnapshot.self, from: data) {
+           let snapshot = try? JSONDecoder().decode(LocalUsageSnapshot.self, from: data),
+           snapshot.schemaVersion == LocalUsageSnapshot.currentSchemaVersion {
             cachedSnapshot = snapshot
             lastRefreshAt = snapshot.updatedAt
         }
@@ -136,6 +137,9 @@ public struct LocalUsageModel: Codable, Sendable, Equatable, Identifiable {
 }
 
 public struct LocalUsageWorkspace: Codable, Sendable, Equatable, Identifiable {
+    // A non-filesystem identity keeps topic sessions in one group without adding their temporary directories to the picker.
+    public static let unassignedID = "codex-island:unassigned"
+
     public let path: String
     public let name: String
     public let days: [LocalUsageDay]
@@ -157,9 +161,14 @@ public struct LocalUsageWorkspace: Codable, Sendable, Equatable, Identifiable {
     }
 
     public var id: String { path }
+    public var isUnassigned: Bool { id == Self.unassignedID }
 }
 
 public struct LocalUsageSnapshot: Codable, Sendable, Equatable {
+    // Earlier snapshots excluded non-project sessions and must be rebuilt even within the refresh interval.
+    public static let currentSchemaVersion = 2
+
+    public let schemaVersion: Int
     public let updatedAt: Date
     public let days: [LocalUsageDay]
     public let totals: LocalUsageTotals
@@ -173,6 +182,7 @@ public struct LocalUsageSnapshot: Codable, Sendable, Equatable {
         topModels: [LocalUsageModel],
         workspaces: [LocalUsageWorkspace] = []
     ) {
+        self.schemaVersion = Self.currentSchemaVersion
         self.updatedAt = updatedAt
         self.days = days
         self.totals = totals
@@ -372,7 +382,7 @@ public final class LocalUsageSnapshotReader {
         var workspaceModelTotals: [String: [String: Int]] = [:]
         let savedWorkspacePaths = savedWorkspaceRootsProvider().map(normalizedWorkspacePaths)
 
-        // Codex's saved workspace roots are the source of truth for the project picker.
+        // Saved roots define project groups, never which sessions contribute to overall usage.
         if let savedWorkspacePaths {
             for path in savedWorkspacePaths {
                 workspaceDaily[path] = Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) })
@@ -406,7 +416,9 @@ public final class LocalUsageSnapshotReader {
             )
             return LocalUsageWorkspace(
                 path: path,
-                name: URL(fileURLWithPath: path).lastPathComponent,
+                name: path == LocalUsageWorkspace.unassignedID
+                    ? "Topics / No project"
+                    : URL(fileURLWithPath: path).lastPathComponent,
                 days: workspaceSnapshot.days,
                 totals: workspaceSnapshot.totals,
                 topModels: workspaceSnapshot.topModels
@@ -448,31 +460,27 @@ public final class LocalUsageSnapshotReader {
                 guard let result = scan(fileURL: fileURL, dayKeys: dayKeys) else {
                     continue
                 }
+                // Topic sessions and sessions with no cwd still contribute to every overall metric.
+                merge(result.daily, into: &daily)
+                merge(result.modelTotals, into: &modelTotals)
+
                 let workspacePath: String?
                 if let savedWorkspacePaths {
                     workspacePath = result.workspacePath.flatMap {
                         matchingWorkspaceRoot(for: $0, savedWorkspacePaths: savedWorkspacePaths)
                     }
-                    guard workspacePath != nil else {
-                        continue
-                    }
                 } else {
                     workspacePath = result.workspacePath
                 }
 
-                merge(result.daily, into: &daily)
-                merge(result.modelTotals, into: &modelTotals)
-
-                guard let workspacePath else {
-                    continue
-                }
-                var scopedDaily = workspaceDaily[workspacePath]
+                let groupID = workspacePath ?? LocalUsageWorkspace.unassignedID
+                var scopedDaily = workspaceDaily[groupID]
                     ?? Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) })
-                var scopedModels = workspaceModelTotals[workspacePath] ?? [:]
+                var scopedModels = workspaceModelTotals[groupID] ?? [:]
                 merge(result.daily, into: &scopedDaily)
                 merge(result.modelTotals, into: &scopedModels)
-                workspaceDaily[workspacePath] = scopedDaily
-                workspaceModelTotals[workspacePath] = scopedModels
+                workspaceDaily[groupID] = scopedDaily
+                workspaceModelTotals[groupID] = scopedModels
             }
         }
     }

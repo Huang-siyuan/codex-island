@@ -20,6 +20,41 @@ func usageSnapshotLoaderDetectsDayRollover() async throws {
     #expect(await loader.needsRefreshForCurrentDay(now: fixedNow(dayKey: "2026-08-19")))
 }
 
+@Test(arguments: [Int?.none, 1])
+func usageSnapshotLoaderRebuildsRecentProjectOnlyCache(schemaVersion: Int?) async throws {
+    let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "topic.jsonl", lines: [
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":10}}}}"#
+    ])
+    let now = fixedNow(dayKey: "2026-08-08")
+    let cacheURL = root.appendingPathComponent("usage-snapshot.json")
+    let oldSnapshot = LocalUsageSnapshot.empty(days: 30, now: now)
+    // Simulate historical on-disk schemas that the current Codable model cannot produce.
+    var oldCache = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(oldSnapshot)) as? [String: Any]
+    )
+    if let schemaVersion {
+        oldCache["schemaVersion"] = schemaVersion
+    } else {
+        oldCache.removeValue(forKey: "schemaVersion")
+    }
+    try JSONSerialization.data(withJSONObject: oldCache).write(to: cacheURL)
+    let reader = LocalUsageSnapshotReader(sessionsRoots: [root], savedWorkspaceRoots: [], now: { now })
+    let loader = UsageSnapshotLoader(reader: reader, cacheURL: cacheURL)
+
+    #expect(await loader.cached() == nil)
+    #expect(await loader.needsRefreshForCurrentDay(now: now))
+    let refreshed = await loader.snapshot(now: now)
+    #expect(refreshed.schemaVersion == LocalUsageSnapshot.currentSchemaVersion)
+    #expect(refreshed.totals.last30DaysTokens == 110)
+    #expect(refreshed.workspaces.first?.isUnassigned == true)
+
+    let reloadedReader = LocalUsageSnapshotReader(sessionsRoots: [root], savedWorkspaceRoots: [], now: { now })
+    let reloaded = UsageSnapshotLoader(reader: reloadedReader, cacheURL: cacheURL)
+    #expect(await reloaded.cached() == refreshed)
+    #expect(await !reloaded.needsRefreshForCurrentDay(now: now))
+    #expect(await reloaded.snapshot(now: now) == refreshed)
+}
+
 @Test
 func localUsageSnapshotReaderAccumulatesTotalUsageByDelta() throws {
     let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "usage-total.jsonl", lines: [
@@ -105,6 +140,10 @@ func localUsageSnapshotReaderAddsOnlyAppendedEventsOnRefresh() throws {
     #expect(refreshed.days.last?.cachedInputTokens == 25)
     #expect(refreshed.days.last?.outputTokens == 13)
     #expect(refreshed.days.last?.totalTokens == 143)
+    #expect(refreshed.workspaces.count == 1)
+    #expect(refreshed.workspaces.first?.isUnassigned == true)
+    #expect(refreshed.filtered(toWorkspaceID: LocalUsageWorkspace.unassignedID).days == refreshed.days)
+    #expect(reader.readSnapshot(days: 7) == refreshed)
 }
 
 @Test
@@ -130,13 +169,13 @@ func localUsageSnapshotReaderGroupsAndFiltersUsageByWorkspace() throws {
     )
     try [
         #"{"type":"session_meta","payload":{"cwd":"/Users/demo/not-imported"}}"#,
-        #"{"type":"turn_context","payload":{"model":"gpt-ignored"}}"#,
+        #"{"type":"turn_context","payload":{"model":"gpt-topic"}}"#,
         #"{"type":"event_msg","timestamp":"2026-08-08T12:00:00Z","payload":{"type":"agent_message","message":"Starting"}}"#,
         #"{"type":"event_msg","timestamp":"2026-08-08T12:00:01Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":300,"cached_input_tokens":60,"output_tokens":30}}}}"#
     ]
     .joined(separator: "\n")
     .write(
-        to: dayDirectory.appendingPathComponent("workspace-ignored.jsonl"),
+        to: dayDirectory.appendingPathComponent("topic.jsonl"),
         atomically: true,
         encoding: .utf8
     )
@@ -154,13 +193,123 @@ func localUsageSnapshotReaderGroupsAndFiltersUsageByWorkspace() throws {
     let snapshot = reader.readSnapshot(days: 7)
     let projectA = try #require(snapshot.workspaces.first(where: { $0.name == "project-a" }))
     let filtered = snapshot.filtered(toWorkspaceID: projectA.id)
+    let topic = try #require(snapshot.workspaces.first(where: { $0.isUnassigned }))
+    let topicSnapshot = snapshot.filtered(toWorkspaceID: topic.id)
 
-    #expect(snapshot.workspaces.map(\.name) == ["project-a", "project-b", "project-c"])
-    #expect(snapshot.days.last?.totalTokens == 330)
+    #expect(snapshot.workspaces.map(\.name) == ["project-a", "project-b", "project-c", "Topics / No project"])
+    #expect(snapshot.days.last?.totalTokens == 660)
     #expect(filtered.days.last?.totalTokens == 110)
     #expect(filtered.days.last?.agentRuns == 1)
     #expect(filtered.topModels.first?.model == "gpt-a")
-    #expect(filtered.workspaces.count == 3)
+    #expect(filtered.workspaces.count == 4)
+    #expect(topic.id == LocalUsageWorkspace.unassignedID)
+    #expect(topicSnapshot.days.last?.totalTokens == 330)
+    #expect(topicSnapshot.topModels.first?.model == "gpt-topic")
+    #expect(snapshot.workspaces.first(where: { $0.name == "project-c" })?.totals.last7DaysTokens == 0)
+
+    let today = try #require(snapshot.days.last)
+    let scopedDays = snapshot.workspaces.compactMap { $0.days.last }
+    #expect(today.inputTokens == 600)
+    #expect(today.cachedInputTokens == 120)
+    #expect(today.outputTokens == 60)
+    #expect(today.agentRuns == 3)
+    #expect(today.agentTimeMS == 6_000)
+    #expect(today.inputTokens == scopedDays.reduce(0) { $0 + $1.inputTokens })
+    #expect(today.cachedInputTokens == scopedDays.reduce(0) { $0 + $1.cachedInputTokens })
+    #expect(today.outputTokens == scopedDays.reduce(0) { $0 + $1.outputTokens })
+    #expect(today.totalTokens == scopedDays.reduce(0) { $0 + $1.totalTokens })
+    #expect(today.agentRuns == scopedDays.reduce(0) { $0 + $1.agentRuns })
+    #expect(today.agentTimeMS == scopedDays.reduce(0) { $0 + $1.agentTimeMS })
+    #expect(snapshot.totals.last7DaysTokens == 660)
+    #expect(snapshot.totals.last30DaysTokens == 660)
+    #expect(snapshot.totals.cacheHitRatePercent == 20)
+    for model in snapshot.topModels {
+        let scopedTokens = snapshot.workspaces.flatMap(\.topModels)
+            .filter { $0.model == model.model }
+            .reduce(0) { $0 + $1.tokens }
+        #expect(model.tokens == scopedTokens)
+    }
+}
+
+@Test(arguments: [
+    "",
+    #"{"type":"session_meta","payload":{"cwd":""}}"#,
+    #"{"type":"session_meta","payload":{"cwd":"   "}}"#,
+    #"{"type":"session_meta","payload":{"cwd":"/Users/demo/Documents/Codex/topic-a"}}"#,
+])
+func localUsageSnapshotReaderIncludesUsageWithoutImportedProjects(metadata: String) throws {
+    let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "topic.jsonl", lines: [
+        metadata,
+        #"{"type":"turn_context","payload":{"model":"gpt-topic"}}"#,
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":10}}}}"#
+    ])
+    let reader = LocalUsageSnapshotReader(
+        sessionsRoots: [root],
+        savedWorkspaceRoots: [],
+        now: { fixedNow(dayKey: "2026-08-08") }
+    )
+
+    let snapshot = reader.readSnapshot(days: 7)
+    let topic = try #require(snapshot.workspaces.first)
+    #expect(snapshot.totals.last7DaysTokens == 110)
+    #expect(snapshot.workspaces.count == 1)
+    #expect(topic.isUnassigned)
+    #expect(topic.name == "Topics / No project")
+    #expect(topic.days == snapshot.days)
+    #expect(topic.totals == snapshot.totals)
+    #expect(topic.topModels == snapshot.topModels)
+}
+
+@Test
+func localUsageSnapshotReaderKeepsRawWorkspaceGroupingWhenRootsAreUnspecified() throws {
+    let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "topic.jsonl", lines: [
+        #"{"type":"session_meta","payload":{"cwd":"/Users/demo/project-a"}}"#,
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"output_tokens":10}}}}"#
+    ])
+    let reader = LocalUsageSnapshotReader(
+        sessionsRoots: [root],
+        now: { fixedNow(dayKey: "2026-08-08") }
+    )
+
+    let snapshot = reader.readSnapshot(days: 7)
+    #expect(snapshot.workspaces.count == 1)
+    #expect(snapshot.workspaces.first?.path == "/Users/demo/project-a")
+    #expect(snapshot.workspaces.first?.isUnassigned == false)
+    #expect(snapshot.workspaces.first?.totals.last7DaysTokens == 110)
+}
+
+@Test
+func localUsageSnapshotReaderUsesDeepestProjectRootAndRejectsSiblingPrefixes() throws {
+    let sessions = [
+        ("/Users/demo/project/nested/Sources", 100),
+        ("/Users/demo/project-other", 200),
+        ("/Users/demo/project/Sources", 300),
+    ]
+    let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "empty.jsonl", lines: [])
+    let dayDirectory = directoryURL(for: "2026-08-08", under: root)
+    for (index, session) in sessions.enumerated() {
+        try [
+            #"{"type":"session_meta","payload":{"cwd":"\#(session.0)"}}"#,
+            #"{"type":"event_msg","timestamp":"2026-08-08T10:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":\#(session.1),"output_tokens":10}}}}"#,
+        ]
+        .joined(separator: "\n")
+        .write(to: dayDirectory.appendingPathComponent("session-\(index).jsonl"), atomically: true, encoding: .utf8)
+    }
+    let reader = LocalUsageSnapshotReader(
+        sessionsRoots: [root],
+        savedWorkspaceRoots: [
+            URL(fileURLWithPath: "/Users/demo/project", isDirectory: true),
+            URL(fileURLWithPath: "/Users/demo/project/nested", isDirectory: true),
+        ],
+        now: { fixedNow(dayKey: "2026-08-08") }
+    )
+
+    let snapshot = reader.readSnapshot(days: 7)
+    #expect(snapshot.totals.last7DaysTokens == 630)
+    #expect(snapshot.workspaces.count == 3)
+    #expect(snapshot.filtered(toWorkspaceID: "/Users/demo/project/nested").totals.last7DaysTokens == 110)
+    #expect(snapshot.filtered(toWorkspaceID: "/Users/demo/project").totals.last7DaysTokens == 310)
+    #expect(snapshot.filtered(toWorkspaceID: LocalUsageWorkspace.unassignedID).totals.last7DaysTokens == 210)
 }
 
 private func makeSessionsRoot(dayKey: String, fileName: String, lines: [String]) throws -> URL {

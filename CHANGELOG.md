@@ -2,6 +2,25 @@
 
 All notable changes to Codex Island are recorded here.
 
+## [Unreleased]
+
+### Fixed — 2026-10-05
+
+- Included topic and projectless Codex sessions in overall token usage, active time, run counts, cache statistics, and model totals. Imported workspace roots now control grouping instead of excluding sessions from the aggregate.
+- Added a localized "Topics / No project" group for sessions outside imported workspaces or without a working directory, and renamed the aggregate filter to "All sessions".
+- Invalidated snapshots produced by the previous project-only accounting so the first load after upgrading rebuilds the cached totals.
+
+### Development notes
+
+- The earlier workspace filter skipped unmatched sessions before merging overall usage. Group assignment now happens after that merge; project subdirectories still resolve to the most specific imported root.
+- Kept the existing local transcript source and 30-day scan window. This change does not add cloud or archived-session data sources.
+
+### Verification
+
+- `swift build` succeeded; `swift test` passed all 61 tests, including projectless grouping, scoped-total reconciliation, incremental refresh, and cache migration coverage.
+- A read-only scan of current-day local transcripts counted previously excluded topic usage and confirmed that the sum of group totals equals overall usage.
+- `git diff --check` passed.
+
 ## [v0.2.1] - 2026-08-11
 
 ### Added

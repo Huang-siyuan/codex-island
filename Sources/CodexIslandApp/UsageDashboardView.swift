@@ -145,7 +145,7 @@ struct UsageDashboardView: View {
             }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "folder.fill")
+                Image(systemName: selectedWorkspaceIcon)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(UsageDashboardPalette.accent)
 
@@ -217,7 +217,7 @@ struct UsageDashboardView: View {
                 isWorkspacePickerHovered = isHovering
             }
         }
-        .help(language.text("Filter usage by workspace", "按工作区筛选用量"))
+        .help(language.text("Filter usage by project or topic", "按项目或话题筛选用量"))
     }
 
     private var workspaceDropdown: some View {
@@ -234,8 +234,9 @@ struct UsageDashboardView: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     workspaceOptionButton(
-                        title: language.text("All workspaces", "全部工作区"),
-                        path: nil,
+                        title: language.text("All sessions", "全部会话"),
+                        tooltip: language.text("Show usage for all local sessions", "显示全部本地会话用量"),
+                        icon: "square.stack.3d.up",
                         workspaceID: nil
                     )
 
@@ -246,8 +247,14 @@ struct UsageDashboardView: View {
 
                         ForEach(workspaces) { workspace in
                             workspaceOptionButton(
-                                title: workspace.name,
-                                path: workspace.path,
+                                title: workspaceDisplayName(workspace),
+                                tooltip: workspace.isUnassigned
+                                    ? language.text(
+                                        "Usage from sessions outside imported projects",
+                                        "未归属到已导入项目的会话用量"
+                                    )
+                                    : workspace.path,
+                                icon: workspace.isUnassigned ? "text.bubble" : "folder",
                                 workspaceID: workspace.id
                             )
                         }
@@ -336,7 +343,7 @@ struct UsageDashboardView: View {
                 return lhsUsage > rhsUsage
             }
         case .name:
-            let nameOrder = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+            let nameOrder = workspaceDisplayName(lhs).localizedCaseInsensitiveCompare(workspaceDisplayName(rhs))
             if nameOrder != .orderedSame {
                 return nameOrder == .orderedAscending
             }
@@ -360,7 +367,12 @@ struct UsageDashboardView: View {
         } ?? -1
     }
 
-    private func workspaceOptionButton(title: String, path: String?, workspaceID: String?) -> some View {
+    private func workspaceOptionButton(
+        title: String,
+        tooltip: String,
+        icon: String,
+        workspaceID: String?
+    ) -> some View {
         let isSelected = selectedWorkspaceID == workspaceID
 
         return Button {
@@ -370,7 +382,7 @@ struct UsageDashboardView: View {
             }
         } label: {
             HStack(spacing: 9) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "folder")
+                Image(systemName: isSelected ? "checkmark.circle.fill" : icon)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(isSelected ? UsageDashboardPalette.accent : UsageDashboardPalette.muted)
                     .frame(width: 15)
@@ -392,15 +404,29 @@ struct UsageDashboardView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(path ?? language.text("Show usage for all workspaces", "显示全部工作区用量"))
+        .help(tooltip)
+    }
+
+    private func workspaceDisplayName(_ workspace: LocalUsageWorkspace) -> String {
+        workspace.isUnassigned ? language.text("Topics / No project", "话题／无项目") : workspace.name
+    }
+
+    private var selectedWorkspace: LocalUsageWorkspace? {
+        guard let selectedWorkspaceID else {
+            return nil
+        }
+        return snapshot?.workspaces.first(where: { $0.id == selectedWorkspaceID })
     }
 
     private var selectedWorkspaceName: String {
-        guard let selectedWorkspaceID,
-              let workspace = snapshot?.workspaces.first(where: { $0.id == selectedWorkspaceID }) else {
-            return language.text("All workspaces", "全部工作区")
+        selectedWorkspace.map(workspaceDisplayName) ?? language.text("All sessions", "全部会话")
+    }
+
+    private var selectedWorkspaceIcon: String {
+        guard let selectedWorkspace else {
+            return "square.stack.3d.up"
         }
-        return workspace.name
+        return selectedWorkspace.isUnassigned ? "text.bubble" : "folder.fill"
     }
 
     private func statCard(_ card: UsageStatCard) -> some View {
