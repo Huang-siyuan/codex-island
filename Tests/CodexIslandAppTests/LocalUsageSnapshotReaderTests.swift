@@ -20,8 +20,8 @@ func usageSnapshotLoaderDetectsDayRollover() async throws {
     #expect(await loader.needsRefreshForCurrentDay(now: fixedNow(dayKey: "2026-08-19")))
 }
 
-@Test(arguments: [Int?.none, 1])
-func usageSnapshotLoaderRebuildsRecentProjectOnlyCache(schemaVersion: Int?) async throws {
+@Test(arguments: [Int?.none, 1, 2])
+func usageSnapshotLoaderRebuildsOldAccountingCache(schemaVersion: Int?) async throws {
     let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "topic.jsonl", lines: [
         #"{"type":"event_msg","timestamp":"2026-08-08T10:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":10}}}}"#
     ])
@@ -98,7 +98,7 @@ func usageSnapshotLoaderManualRefreshBypassesAndReplacesRecentCache() async thro
 }
 
 @Test
-func localUsageSnapshotReaderAccumulatesTotalUsageByDelta() throws {
+func localUsageSnapshotReaderBaselinesLegacyCumulativeUsageBeforeCountingDeltas() throws {
     let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "usage-total.jsonl", lines: [
         #"{"type":"turn_context","payload":{"model":"gpt-5"}}"#,
         #"{"type":"event_msg","timestamp":"2026-08-08T10:00:00Z","payload":{"type":"agent_message","message":"Starting"}}"#,
@@ -114,15 +114,15 @@ func localUsageSnapshotReaderAccumulatesTotalUsageByDelta() throws {
     let snapshot = reader.readSnapshot(days: 7)
     let today = try #require(snapshot.days.last)
 
-    #expect(today.inputTokens == 130)
-    #expect(today.cachedInputTokens == 70)
-    #expect(today.outputTokens == 40)
-    #expect(today.totalTokens == 170)
+    #expect(today.inputTokens == 30)
+    #expect(today.cachedInputTokens == 10)
+    #expect(today.outputTokens == 20)
+    #expect(today.totalTokens == 50)
     #expect(today.agentRuns == 1)
     #expect(today.agentTimeMS == 4_000)
-    #expect(snapshot.totals.last7DaysTokens == 170)
+    #expect(snapshot.totals.last7DaysTokens == 50)
     #expect(snapshot.topModels.first?.model == "gpt-5")
-    #expect(snapshot.topModels.first?.tokens == 170)
+    #expect(snapshot.topModels.first?.tokens == 50)
 }
 
 @Test
@@ -377,4 +377,87 @@ private func fixedNow(dayKey: String) -> Date {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime]
     return formatter.date(from: "\(dayKey)T12:00:00Z") ?? Date(timeIntervalSince1970: 0)
+}
+
+@Test
+func localUsageSnapshotReaderCountsRequestsInsteadOfInheritedCounters() throws {
+    let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "resumed.jsonl", lines: [
+        #"{"type":"session_meta","payload":{"id":"thread","cwd":"/tmp/project"}}"#,
+        #"{"type":"turn_context","payload":{"model":"gpt-6-astra"}}"#,
+        #"{"type":"token_usage_record","timestamp":"2026-08-08T10:00:00Z","payload":{"response_id":"resp-one","usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":10},"thread_token_usage":{"input_tokens":85000100,"output_tokens":1000010}}}"#,
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:02Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":85000100,"cached_input_tokens":80000080,"output_tokens":1000010},"last_token_usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":10}}}}"#,
+        // Compaction requests have independent usage even when no display counter follows them.
+        #"{"type":"token_usage_record","timestamp":"2026-08-08T10:00:05Z","payload":{"response_id":"resp-compaction","usage":{"input_tokens":50,"cached_input_tokens":20,"output_tokens":5}}}"#,
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:05.001Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":85000150,"output_tokens":1000015},"last_token_usage":{"input_tokens":0,"output_tokens":0,"total_tokens":999}}}}"#,
+        // Repeated counters in a continuation can arrive without a corresponding new request.
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:05.002Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":10}}}}"#,
+        // A zero usage record must not count a stale total_tokens or the reasoning subset twice.
+        #"{"type":"token_usage_record","timestamp":"2026-08-08T10:00:06Z","payload":{"response_id":"resp-zero","usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":100,"total_tokens":999}}}"#,
+    ])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let reader = LocalUsageSnapshotReader(sessionsRoots: [root], now: { fixedNow(dayKey: "2026-08-08") })
+    let snapshot = reader.readSnapshot(days: 7)
+    let today = try #require(snapshot.days.last)
+    #expect(today.inputTokens == 150)
+    #expect(today.cachedInputTokens == 100)
+    #expect(today.outputTokens == 15)
+    #expect(today.totalTokens == 165)
+    #expect(snapshot.topModels.first?.tokens == 165)
+    #expect(snapshot.workspaces.first?.totals.last7DaysTokens == 165)
+    #expect(reader.readSnapshot(days: 7) == snapshot)
+}
+
+@Test
+func localUsageSnapshotReaderDeduplicatesResponsesAcrossFilesAndRefreshes() throws {
+    let request = #"{"type":"token_usage_record","timestamp":"2026-08-08T10:00:00Z","payload":{"response_id":"resp-shared","usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":10}}}"#
+    let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "original.jsonl", lines: [request, ""])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let directory = directoryURL(for: "2026-08-08", under: root)
+    let copy = directory.appendingPathComponent("resumed.jsonl")
+    try (request + "\n").write(to: copy, atomically: true, encoding: .utf8)
+    let reader = LocalUsageSnapshotReader(sessionsRoots: [root, root], now: { fixedNow(dayKey: "2026-08-08") })
+    #expect(reader.readSnapshot(days: 7).totals.last7DaysTokens == 110)
+    let handle = try FileHandle(forWritingTo: copy)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data((request + "\n" +
+        #"{"type":"token_usage_record","timestamp":"2026-08-08T10:00:02Z","payload":{"response_id":"resp-new","usage":{"input_tokens":30,"cached_input_tokens":5,"output_tokens":3}}}"# + "\n").utf8))
+    try handle.close()
+    let refreshed = reader.readSnapshot(days: 7)
+    #expect(refreshed.days.last?.inputTokens == 130)
+    #expect(refreshed.days.last?.cachedInputTokens == 85)
+    #expect(refreshed.totals.last7DaysTokens == 143)
+    #expect(refreshed.workspaces.reduce(0) { $0 + $1.totals.last7DaysTokens } == 143)
+    #expect(reader.readSnapshot(days: 7) == refreshed)
+    let rebuilt = LocalUsageSnapshotReader(sessionsRoots: [root], now: { fixedNow(dayKey: "2026-08-08") })
+    #expect(rebuilt.readSnapshot(days: 7) == refreshed)
+}
+
+@Test
+func localUsageSnapshotReaderUsesLegacyLastUsageAndIgnoresCounterRepeatsAndResets() throws {
+    let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "legacy.jsonl", lines: [
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:00Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":85000100,"output_tokens":1000010},"last_token_usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":10}}}}"#,
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:01Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":85000100,"output_tokens":1000010},"last_token_usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":10}}}}"#,
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:02Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":50,"output_tokens":5},"last_token_usage":{"input_tokens":30,"cached_input_tokens":500,"output_tokens":3}}}}"#,
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:03Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":20,"output_tokens":2}}}}"#,
+    ])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let reader = LocalUsageSnapshotReader(sessionsRoots: [root], now: { fixedNow(dayKey: "2026-08-08") })
+    let snapshot = reader.readSnapshot(days: 7)
+    #expect(snapshot.days.last?.inputTokens == 130)
+    #expect(snapshot.days.last?.cachedInputTokens == 110)
+    #expect(snapshot.days.last?.outputTokens == 13)
+    #expect(snapshot.totals.last7DaysTokens == 143)
+}
+
+@Test
+func localUsageSnapshotReaderRetainsLegacyRequestsBeforeFormatMigration() throws {
+    let root = try makeSessionsRoot(dayKey: "2026-08-08", fileName: "mixed.jsonl", lines: [
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"cached_input_tokens":10,"output_tokens":2}}}}"#,
+        #"{"type":"token_usage_record","timestamp":"2026-08-08T10:00:02Z","payload":{"response_id":"resp-modern","usage":{"input_tokens":30,"cached_input_tokens":20,"output_tokens":3}}}"#,
+        #"{"type":"event_msg","timestamp":"2026-08-08T10:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":30,"cached_input_tokens":20,"output_tokens":3}}}}"#,
+    ])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let snapshot = LocalUsageSnapshotReader(sessionsRoots: [root], now: { fixedNow(dayKey: "2026-08-08") }).readSnapshot(days: 7)
+    #expect(snapshot.totals.last7DaysTokens == 55)
+    #expect(snapshot.days.last?.cachedInputTokens == 30)
 }

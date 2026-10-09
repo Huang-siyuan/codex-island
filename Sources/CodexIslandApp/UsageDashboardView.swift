@@ -105,6 +105,10 @@ struct UsageDashboardView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .tracking(1.8)
                 .foregroundStyle(UsageDashboardPalette.title)
+                .help(language.text(
+                    "Request input + output, including cached input. Duplicate responses and inherited counters are excluded. Local usage is not a billing statement.",
+                    "按请求统计输入＋输出，包含缓存输入；排除重复请求和继承的累计量。本地用量不等同于结算账单。"
+                ))
 
             workspacePill
 
@@ -968,7 +972,7 @@ private struct UsageDashboardPresentation {
                     id: "cachedTokens",
                     label: text("Cached tokens", "缓存 Token"),
                     value: formatCompactNumber(last7Cached),
-                    suffix: text("saved", "已节省"),
+                    suffix: text("included", "已计入"),
                     caption: last7Input == 0
                         ? text("Last 7 days", "最近 7 天")
                         : text(

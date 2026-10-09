@@ -4,6 +4,20 @@ All notable changes to Codex Island are recorded here.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-09
+
+- 按逐请求 `token_usage_record.payload.usage` 统计输入＋输出，缓存输入包含在输入内，不额外相加；不使用会话或轮次累计量充当本次消耗。
+- 用 `response_id` 对跨文件复制、续接和重复写入的请求去重；每次刷新从缓存的请求记录重建去重集合，保留增量读取。
+- 有逐请求记录后忽略后续显示计数器，防止延迟计数器、重复通知和压缩后的旧值再次累加。旧格式优先读取 `last_token_usage`；只有累计计数时先建立基线，再统计后续非回退差值。
+- 将快照版本升级至 3，升级后自动重建旧统计缓存。缓存卡片改为“已计入”，并说明本地请求用量包含缓存输入且不等同于结算账单。
+
+### Verification — 2026-10-09
+
+- `swift test --jobs 2`：66 个测试通过，覆盖续接累计量、重复响应、压缩请求、延迟和重复显示计数器、旧格式兼容、增量刷新和旧缓存迁移。
+- `swift build --jobs 2` 和 release 构建通过。安装并启动新版后，确认使用新快照版本、缓存卡片文案和修正后的当前日用量；安装包与构建包的可执行文件一致，签名验证通过。
+- 使用脱敏的本地用量事件按固定截止时间重放，与独立逐请求计数对账；分组总量与整体总量一致。
+- `git diff --check` 通过。
+
 ### Fixed — 2026-10-05
 
 - Added a localized manual refresh button beside the Usage dashboard's update time, with a progress indicator and disabled state while a refresh is running.

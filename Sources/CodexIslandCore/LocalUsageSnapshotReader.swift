@@ -168,8 +168,8 @@ public struct LocalUsageWorkspace: Codable, Sendable, Equatable, Identifiable {
 }
 
 public struct LocalUsageSnapshot: Codable, Sendable, Equatable {
-    // Earlier snapshots excluded non-project sessions and must be rebuilt even within the refresh interval.
-    public static let currentSchemaVersion = 2
+    // Earlier snapshots used inherited cumulative counters; rebuild them even within the refresh interval.
+    public static let currentSchemaVersion = 3
 
     public let schemaVersion: Int
     public let updatedAt: Date
@@ -252,6 +252,7 @@ public final class LocalUsageSnapshotReader {
         Array("session_meta\"".utf8),
         Array("turn_context\"".utf8),
         Array("token_count\"".utf8),
+        Array("token_usage_record\"".utf8),
         Array("agent_message\"".utf8),
         Array("agent_reasoning\"".utf8),
         Array("response_item\"".utf8),
@@ -265,23 +266,32 @@ public final class LocalUsageSnapshotReader {
         var agentRuns: Int = 0
     }
 
-    private struct UsageTotals {
+    private struct UsageTotals: Equatable {
         var input: Int = 0
         var cached: Int = 0
         var output: Int = 0
     }
 
+    private struct RequestUsage {
+        let id: String
+        let dayKey: String
+        let model: String
+        let usage: UsageTotals
+    }
+
     private struct ScanResult {
         let workspacePath: String?
         let daily: [String: DailyTotals]
-        let modelTotals: [String: Int]
+        let requests: [RequestUsage]
     }
 
     private struct ScanState {
         var daily: [String: DailyTotals]
-        var modelTotals: [String: Int] = [:]
+        var requests: [RequestUsage] = []
         var workspacePath: String?
-        var previousTotals = UsageTotals()
+        var sessionID: String
+        var previousTotals: UsageTotals?
+        var hasRequestUsage = false
         var currentModel: String?
         var lastActivityMS: Int64?
         var seenRuns: Set<Int64> = []
@@ -290,7 +300,7 @@ public final class LocalUsageSnapshotReader {
             ScanResult(
                 workspacePath: workspacePath,
                 daily: daily,
-                modelTotals: modelTotals
+                requests: requests
             )
         }
     }
@@ -397,7 +407,8 @@ public final class LocalUsageSnapshotReader {
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
             .filter { fileManager.fileExists(atPath: $0.path) }
 
-        for root in sessionRoots {
+        var seenRequests: Set<String> = []
+        for root in sessionRoots.sorted(by: { $0.path < $1.path }) {
             scan(
                 root: root,
                 dayKeys: dayKeys,
@@ -405,7 +416,8 @@ public final class LocalUsageSnapshotReader {
                 modelTotals: &modelTotals,
                 workspaceDaily: &workspaceDaily,
                 workspaceModelTotals: &workspaceModelTotals,
-                savedWorkspacePaths: savedWorkspacePaths
+                savedWorkspacePaths: savedWorkspacePaths,
+                seenRequests: &seenRequests
             )
         }
         fileScanCache = fileScanCache.filter { scannedFilePaths.contains($0.key) }
@@ -447,7 +459,8 @@ public final class LocalUsageSnapshotReader {
         modelTotals: inout [String: Int],
         workspaceDaily: inout [String: [String: DailyTotals]],
         workspaceModelTotals: inout [String: [String: Int]],
-        savedWorkspacePaths: [String]?
+        savedWorkspacePaths: [String]?,
+        seenRequests: inout Set<String>
     ) {
         for dayKey in dayKeys {
             let dayDirectory = directoryURL(for: dayKey, under: root)
@@ -459,13 +472,26 @@ public final class LocalUsageSnapshotReader {
                 continue
             }
 
-            for fileURL in fileURLs where fileURL.pathExtension == "jsonl" {
+            for fileURL in fileURLs.sorted(by: { $0.path < $1.path }) where fileURL.pathExtension == "jsonl" {
                 guard let result = scan(fileURL: fileURL, dayKeys: dayKeys) else {
                     continue
                 }
-                // Topic sessions and sessions with no cwd still contribute to every overall metric.
-                merge(result.daily, into: &daily)
-                merge(result.modelTotals, into: &modelTotals)
+                // Rebuild request deduplication on every snapshot, including unchanged cached files.
+                // A resumed or forked transcript can contain responses already present in another file.
+                var fileDaily = result.daily
+                var fileModels: [String: Int] = [:]
+                for request in result.requests where seenRequests.insert(request.id).inserted {
+                    guard var entry = fileDaily[request.dayKey] else {
+                        continue
+                    }
+                    entry.input += request.usage.input
+                    entry.cached += request.usage.cached
+                    entry.output += request.usage.output
+                    fileDaily[request.dayKey] = entry
+                    fileModels[request.model, default: 0] += request.usage.input + request.usage.output
+                }
+                merge(fileDaily, into: &daily)
+                merge(fileModels, into: &modelTotals)
 
                 let workspacePath: String?
                 if let savedWorkspacePaths {
@@ -480,8 +506,8 @@ public final class LocalUsageSnapshotReader {
                 var scopedDaily = workspaceDaily[groupID]
                     ?? Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) })
                 var scopedModels = workspaceModelTotals[groupID] ?? [:]
-                merge(result.daily, into: &scopedDaily)
-                merge(result.modelTotals, into: &scopedModels)
+                merge(fileDaily, into: &scopedDaily)
+                merge(fileModels, into: &scopedModels)
                 workspaceDaily[groupID] = scopedDaily
                 workspaceModelTotals[groupID] = scopedModels
             }
@@ -550,7 +576,10 @@ public final class LocalUsageSnapshotReader {
             state = cached.state
             startOffset = cached.fileSize
         } else {
-            state = ScanState(daily: Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) }))
+            state = ScanState(
+                daily: Dictionary(uniqueKeysWithValues: dayKeys.map { ($0, DailyTotals()) }),
+                sessionID: path
+            )
             startOffset = 0
         }
 
@@ -637,6 +666,23 @@ public final class LocalUsageSnapshotReader {
 
             if entryType == "session_meta" {
                 state.workspacePath = extractWorkspacePath(fromSessionMeta: object) ?? state.workspacePath
+                state.sessionID = (object["payload"] as? [String: Any])?["id"] as? String ?? state.sessionID
+                return
+            }
+
+            if entryType == "token_usage_record" {
+                guard let payload = object["payload"] as? [String: Any],
+                      let rawUsage = payload["usage"] as? [String: Any],
+                      let timestampMS = readTimestampMS(from: object) else {
+                    return
+                }
+                let usage = readUsage(rawUsage)
+                let responseID = payload["response_id"] as? String
+                let sessionID = payload["thread_id"] as? String ?? state.sessionID
+                let id = responseID.map { "response:\($0)" }
+                    ?? "request:\(sessionID):\(timestampMS):\(usage.input):\(usage.output)"
+                recordRequest(usage, id: id, timestampMS: timestampMS, model: state.currentModel, state: &state)
+                state.hasRequestUsage = true
                 return
             }
 
@@ -666,56 +712,50 @@ public final class LocalUsageSnapshotReader {
                     return
                 }
 
-                let usage = extractUsage(from: info)
-                guard let usage else {
+                guard let timestampMS = readTimestampMS(from: object) else {
+                    return
+                }
+                let total = findUsageDictionary(in: info, keys: ["total_token_usage", "totalTokenUsage"])
+                    .map(readUsage)
+                let last = findUsageDictionary(in: info, keys: ["last_token_usage", "lastTokenUsage"])
+                    .map(readUsage)
+                let previous = state.previousTotals
+                if let total {
+                    state.previousTotals = total
+                }
+                trackActivity(timestampMS, daily: &state.daily, lastActivityMS: &state.lastActivityMS)
+                // Once the transcript supplies request records, all subsequent token_count events
+                // are display counters. They may be delayed, repeated, or stale after compaction.
+                guard !state.hasRequestUsage else {
                     return
                 }
 
-                var delta = UsageTotals(
-                    input: usage.input,
-                    cached: usage.cached,
-                    output: usage.output
-                )
-
-                if usage.usedTotal {
-                    delta = UsageTotals(
-                        input: max(0, usage.input - state.previousTotals.input),
-                        cached: max(0, usage.cached - state.previousTotals.cached),
-                        output: max(0, usage.output - state.previousTotals.output)
-                    )
-                    state.previousTotals = UsageTotals(
-                        input: usage.input,
-                        cached: usage.cached,
-                        output: usage.output
+                // Never treat the first cumulative counter as newly billed usage: it may carry
+                // an entire historical conversation. Prefer the explicit request in legacy logs.
+                let usage: UsageTotals
+                if let total, total == previous {
+                    return
+                } else if let last {
+                    usage = last
+                } else if let total, let previous,
+                          total.input >= previous.input, total.output >= previous.output {
+                    usage = UsageTotals(
+                        input: total.input - previous.input,
+                        cached: max(0, total.cached - previous.cached),
+                        output: total.output - previous.output
                     )
                 } else {
-                    state.previousTotals.input += delta.input
-                    state.previousTotals.cached += delta.cached
-                    state.previousTotals.output += delta.output
-                }
-
-                guard delta.input > 0 || delta.cached > 0 || delta.output > 0 else {
                     return
                 }
-
-                guard let timestampMS = readTimestampMS(from: object),
-                      let dayKey = dayKey(forTimestampMS: timestampMS),
-                      var entry = state.daily[dayKey] else {
-                    return
-                }
-
-                let cached = min(delta.cached, delta.input)
-                entry.input += delta.input
-                entry.cached += cached
-                entry.output += delta.output
-                state.daily[dayKey] = entry
-
-                let modelName = state.currentModel
-                    ?? extractModel(fromTokenCount: object)
-                    ?? "unknown"
-                state.modelTotals[modelName, default: 0] += delta.input + delta.output
-
-                trackActivity(timestampMS, daily: &state.daily, lastActivityMS: &state.lastActivityMS)
+                let counterID = total.map { "total:\($0.input):\($0.cached):\($0.output)" }
+                    ?? "time:\(timestampMS):\(usage.input):\(usage.cached):\(usage.output)"
+                recordRequest(
+                    usage,
+                    id: "legacy:\(state.sessionID):\(timestampMS):\(counterID)",
+                    timestampMS: timestampMS,
+                    model: state.currentModel ?? extractModel(fromTokenCount: object),
+                    state: &state
+                )
                 return
             }
 
@@ -922,26 +962,40 @@ public final class LocalUsageSnapshotReader {
         return Self.dayKeyFormatter.string(from: date)
     }
 
-    private func extractUsage(from info: [String: Any]) -> (input: Int, cached: Int, output: Int, usedTotal: Bool)? {
-        if let totalUsage = findUsageDictionary(in: info, keys: ["total_token_usage", "totalTokenUsage"]) {
-            return (
-                readInt(from: totalUsage, keys: ["input_tokens", "inputTokens"]),
-                readInt(from: totalUsage, keys: ["cached_input_tokens", "cache_read_input_tokens", "cachedInputTokens", "cacheReadInputTokens"]),
-                readInt(from: totalUsage, keys: ["output_tokens", "outputTokens"]),
-                true
-            )
-        }
+    private func readUsage(_ dictionary: [String: Any]) -> UsageTotals {
+        let input = max(0, readInt(from: dictionary, keys: ["input_tokens", "inputTokens"]))
+        return UsageTotals(
+            input: input,
+            cached: min(input, max(0, readInt(from: dictionary, keys: [
+                "cached_input_tokens", "cache_read_input_tokens", "cachedInputTokens", "cacheReadInputTokens",
+            ]))),
+            output: max(0, readInt(from: dictionary, keys: ["output_tokens", "outputTokens"]))
+        )
+    }
 
-        if let lastUsage = findUsageDictionary(in: info, keys: ["last_token_usage", "lastTokenUsage"]) {
-            return (
-                readInt(from: lastUsage, keys: ["input_tokens", "inputTokens"]),
-                readInt(from: lastUsage, keys: ["cached_input_tokens", "cache_read_input_tokens", "cachedInputTokens", "cacheReadInputTokens"]),
-                readInt(from: lastUsage, keys: ["output_tokens", "outputTokens"]),
-                false
-            )
+    private func recordRequest(
+        _ usage: UsageTotals,
+        id: String,
+        timestampMS: Int64,
+        model: String?,
+        state: inout ScanState
+    ) {
+        guard usage.input > 0 || usage.output > 0,
+              let dayKey = dayKey(forTimestampMS: timestampMS),
+              state.daily[dayKey] != nil else {
+            return
         }
-
-        return nil
+        state.requests.append(RequestUsage(
+            id: id,
+            dayKey: dayKey,
+            model: model ?? "unknown",
+            usage: UsageTotals(
+                input: usage.input,
+                cached: min(usage.cached, usage.input),
+                output: usage.output
+            )
+        ))
+        trackActivity(timestampMS, daily: &state.daily, lastActivityMS: &state.lastActivityMS)
     }
 
     private func extractWorkspacePath(fromSessionMeta object: [String: Any]) -> String? {
