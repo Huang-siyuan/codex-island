@@ -63,6 +63,13 @@ swift build -c "$CONFIGURATION" --product "$PRODUCT_NAME"
 
 BIN_DIR="$(swift build -c "$CONFIGURATION" --show-bin-path)"
 BIN_PATH="$BIN_DIR/$PRODUCT_NAME"
+RESOURCE_BUNDLE_NAME="CodexIsland_CodexIslandCore.bundle"
+RESOURCE_BUNDLE_PATH="$BIN_DIR/$RESOURCE_BUNDLE_NAME"
+
+if [[ ! -f "$RESOURCE_BUNDLE_PATH/Completion.wav" ]]; then
+  echo "Built-in completion sound not found in: $RESOURCE_BUNDLE_PATH" >&2
+  exit 1
+fi
 
 if [[ ! -x "$BIN_PATH" ]]; then
   echo "Built executable not found at: $BIN_PATH" >&2
@@ -77,6 +84,9 @@ chmod +x "$APP_DIR/Contents/MacOS/$PRODUCT_NAME"
 if [[ "$CONFIGURATION" == "release" ]]; then
   /usr/bin/strip -S "$APP_DIR/Contents/MacOS/$PRODUCT_NAME"
 fi
+# Keep resource bundles in the standard location required by macOS code signing.
+rm -rf "$APP_DIR/Contents/Resources/$RESOURCE_BUNDLE_NAME"
+ditto "$RESOURCE_BUNDLE_PATH" "$APP_DIR/Contents/Resources/$RESOURCE_BUNDLE_NAME"
 cp "$PLIST_PATH" "$APP_DIR/Contents/Info.plist"
 printf 'APPL????' > "$APP_DIR/Contents/PkgInfo"
 
@@ -111,7 +121,8 @@ done
 iconutil -c icns "$ICONSET_DIR" -o "$APP_DIR/Contents/Resources/$ICON_NAME.icns"
 
 if command -v codesign >/dev/null 2>&1; then
-  codesign --force --deep --sign - "$APP_DIR" >/dev/null 2>&1 || true
+  codesign --force --deep --sign - "$APP_DIR"
+  codesign --verify --deep --strict "$APP_DIR"
 fi
 
 echo "Packaged app bundle:"

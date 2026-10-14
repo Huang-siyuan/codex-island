@@ -15,7 +15,9 @@ Codex Island lives at the top of your screen, keeps the active AI coding session
 - Shows exact daily usage when hovering over the seven-day chart
 - Supports markdown rendering in the expanded session detail area
 - Lets you click a session card to jump back into Codex, Claude Code CLI, or CodeBuddy
-- Includes an in-app sound toggle and custom completion sound picker
+- Includes a bundled two-note completion chime used by default, with mute and custom sound controls
+- Groups language, appearance, completion sounds, and launch at login in an inline Settings page, opened with the island's gear button; Sessions and Usage switch back without opening another window
+- Offers an optional launch-at-login checkbox backed by macOS Login Items; changes made in System Settings are reflected in the app
 - Keeps completion state in the hub without showing macOS system banners by default
 - Performs first-launch setup so the local Codex wrapper is available without manual shell edits
 
@@ -76,6 +78,8 @@ That copies the packaged app into:
 
 ## First launch behavior
 
+Launch at login is opt-in. Open the gear button → Settings and enable **Launch at login** from the installed app. If macOS requires approval, Settings shows the pending state and a link to Login Items.
+
 On the first successful launch, the app will:
 
 - create `~/Library/Application Support/CodexIsland/bin/codex`
@@ -92,3 +96,7 @@ That keeps setup lightweight and avoids manual shell wiring.
 - CodeBuddy jumps try to reopen the related workspace via the local CodeBuddy CLI, then fall back to activating the app.
 - The app icon is generated locally during packaging, so you do not need to manage a separate binary `.icns` file by hand.
 - `swift test` is wired through `swift-testing`, so the test suite can run in the local package environment.
+
+## UI design
+
+[DESIGN.md](DESIGN.md) documents the shared palette, typography, surfaces and controls for Sessions, Usage and inline Settings. Reuse `IslandDesign.swift` and `IslandControls.swift` when extending the interface.

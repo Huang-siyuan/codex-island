@@ -5,15 +5,12 @@ struct CodexIslandApplication: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
+        // The floating panel owns settings; suppress the standalone window's menu entry.
         Settings {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Codex Island")
-                    .font(.headline)
-                Text("The floating island is already running near the top of the screen.")
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 340, height: 120)
-            .padding()
+            EmptyView()
+        }
+        .commands {
+            CommandGroup(replacing: .appSettings) {}
         }
     }
 }

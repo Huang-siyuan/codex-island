@@ -11,6 +11,7 @@ struct IslandRootView: View {
     private let detailRevealAnimation = Animation.spring(response: 0.24, dampingFraction: 0.88)
     private let detailHideAnimation = Animation.easeOut(duration: 0.18)
 
+    @StateObject private var launchAtLoginStore = LaunchAtLoginStore()
     @State private var isExpanded = false
     @State private var showsExpandedContent = false
     @State private var detailRevealTask: Task<Void, Never>?
@@ -22,6 +23,8 @@ struct IslandRootView: View {
     var body: some View {
         islandCard
             .environment(\.locale, language.locale)
+            .environment(\.colorScheme, .dark)
+            .tint(IslandPalette.accent)
             .background {
                 GeometryReader { proxy in
                     Color.clear
@@ -68,7 +71,7 @@ struct IslandRootView: View {
         }
         .clipShape(shellShape)
         .contentShape(Rectangle())
-        .foregroundStyle(.white)
+        .foregroundStyle(IslandPalette.title)
         .onHover { hovering in
             handleHoverChange(hovering)
         }
@@ -108,14 +111,14 @@ struct IslandRootView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(localizedThreadTitle)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(IslandTypography.heading)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
                     .layoutPriority(1)
 
                 Text(viewModel.latestToolSummary ?? language.statusText(for: viewModel.statusText))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(IslandTypography.caption)
+                    .foregroundStyle(IslandPalette.subtitle)
                     .lineLimit(2)
             }
 
@@ -123,45 +126,40 @@ struct IslandRootView: View {
 
             HStack(spacing: 8) {
                 expandedTabPicker
-                languageToggleButton
-                soundToggleButton
-                customSoundButton
-                if viewModel.customCompletionSoundName != nil {
-                    clearCustomSoundButton
-                }
+                settingsButton
 
                 Text(sessionCountText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(IslandTypography.caption)
+                    .foregroundStyle(IslandPalette.subtitle)
             }
         }
     }
 
     private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 14) {
-            appearanceSelector
-
             Group {
                 switch viewModel.selectedExpandedTab {
                 case .sessions:
                     sessionsContent
                 case .usage:
                     usageContent
+                case .settings:
+                    IslandSettingsView(viewModel: viewModel, launchAtLoginStore: launchAtLoginStore)
                 }
             }
         }
     }
 
     private var sessionsContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: IslandLayout.sectionSpacing) {
             if let setupMessage = viewModel.setupMessage {
                 Label(localizedSetupMessage(setupMessage), systemImage: "wand.and.stars")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(IslandTypography.caption)
+                    .foregroundStyle(IslandPalette.subtitle)
                     .lineLimit(2)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
-                    .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .modifier(IslandSurface())
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -191,7 +189,7 @@ struct IslandRootView: View {
 
     private var expandedTabPicker: some View {
         HStack(spacing: 6) {
-            ForEach(IslandExpandedTab.allCases) { tab in
+            ForEach([IslandExpandedTab.sessions, .usage]) { tab in
                 Button {
                     guard viewModel.selectedExpandedTab != tab else {
                         return
@@ -205,149 +203,31 @@ struct IslandRootView: View {
                             .font(.system(size: 10, weight: .semibold))
 
                         Text(tab.title(language: language))
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(IslandTypography.control)
                             .lineLimit(1)
                     }
                     .fixedSize(horizontal: true, vertical: false)
-                    .foregroundStyle(viewModel.selectedExpandedTab == tab ? Color.white : Color.white.opacity(0.68))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        viewModel.selectedExpandedTab == tab
-                            ? Color.white.opacity(0.12)
-                            : Color.white.opacity(0.05),
-                        in: Capsule()
-                    )
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(
-                                Color.white.opacity(viewModel.selectedExpandedTab == tab ? 0.09 : 0.04),
-                                lineWidth: 1
-                            )
-                    )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(IslandButtonStyle(isSelected: viewModel.selectedExpandedTab == tab))
+                .accessibilityAddTraits(viewModel.selectedExpandedTab == tab ? .isSelected : [])
             }
-
         }
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private var appearanceSelector: some View {
-        HStack(spacing: 10) {
-            Label(language.text("Appearance", "外观"), systemImage: "paintbrush.fill")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.58))
-
-            Spacer()
-
-            HStack(spacing: 4) {
-                ForEach(IslandAppearance.allCases) { option in
-                    Button {
-                        islandAppearanceRaw = option.rawValue
-                    } label: {
-                        Text(option.title(language: language))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(option == appearance ? Color.white : Color.white.opacity(0.60))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(
-                                option == appearance ? Color.white.opacity(0.13) : Color.clear,
-                                in: Capsule()
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(option == appearance ? .isSelected : [])
-                }
-            }
-            .padding(3)
-            .background(Color.white.opacity(0.045), in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
-        }
-        .padding(.horizontal, 2)
-    }
-
-    private var languageToggleButton: some View {
+    private var settingsButton: some View {
         Button {
-            interfaceLanguageRaw = language == .english
-                ? InterfaceLanguage.simplifiedChinese.rawValue
-                : InterfaceLanguage.english.rawValue
+            viewModel.selectExpandedTab(.settings)
         } label: {
-            Text(language.toggleTitle)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.86))
-                .frame(width: 26, height: 22)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
-                )
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 12)
         }
-        .buttonStyle(.plain)
-        .help(language.text("Switch to Chinese", "切换到英文"))
-        .accessibilityLabel(language.text("Switch interface language to Chinese", "将界面语言切换为英文"))
-    }
-
-    private var soundToggleButton: some View {
-        Button {
-            viewModel.toggleSoundEnabled()
-        } label: {
-            Image(systemName: viewModel.isSoundEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(viewModel.isSoundEnabled ? Color.white.opacity(0.9) : Color.white.opacity(0.6))
-                .frame(width: 26, height: 22)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-        .help(
-            viewModel.isSoundEnabled
-                ? language.text("Mute completion sound", "关闭完成提示音")
-                : language.text("Enable completion sound", "开启完成提示音")
-        )
-    }
-
-    private var customSoundButton: some View {
-        Button {
-            viewModel.chooseCustomCompletionSound(language: language)
-        } label: {
-            Image(systemName: viewModel.customCompletionSoundName == nil ? "music.note" : "music.note.list")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(viewModel.customCompletionSoundName == nil ? Color.white.opacity(0.65) : Color.white.opacity(0.92))
-                .frame(width: 26, height: 22)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-        .help(
-            viewModel.customCompletionSoundName.map {
-                language.text("Custom completion sound: \($0)", "自定义完成提示音：\($0)")
-            } ?? language.text("Choose custom completion sound", "选择自定义完成提示音")
-        )
-    }
-
-    private var clearCustomSoundButton: some View {
-        Button {
-            viewModel.clearCustomCompletionSound()
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.58))
-                .frame(width: 22, height: 22)
-                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-        .help(language.text("Use default completion sound", "使用默认完成提示音"))
+        .buttonStyle(IslandButtonStyle(isSelected: viewModel.selectedExpandedTab == .settings))
+        .help(language.text("Settings", "设置"))
+        .accessibilityLabel(language.text("Settings", "设置"))
+        .accessibilityIdentifier("island.settings")
+        .accessibilityAddTraits(viewModel.selectedExpandedTab == .settings ? .isSelected : [])
     }
 
     private func sessionPreviewCard(_ preview: SessionPreview) -> some View {
@@ -364,25 +244,25 @@ struct IslandRootView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .top, spacing: 8) {
                             Text(preview.title)
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(IslandTypography.heading)
                                 .lineLimit(1)
 
                             Spacer(minLength: 8)
 
                             HStack(spacing: 8) {
-                                badge(text: preview.sourceLabel, color: .white.opacity(0.12))
+                                badge(text: preview.sourceLabel, color: IslandPalette.emphasizedSurface)
                                 badge(
                                     text: language.statusText(for: preview.statusText),
                                     color: statusColor(for: preview.statusText).opacity(0.2)
                                 )
-                                badge(text: relativeAgeText(for: preview.updatedAt), color: .white.opacity(0.08))
+                                badge(text: relativeAgeText(for: preview.updatedAt), color: IslandPalette.surface)
                             }
                         }
 
                         if let userPreview = preview.userPreview, !userPreview.isEmpty {
                             Text(language.text("You: \(userPreview)", "你：\(userPreview)"))
                                 .font(.system(size: 13, weight: .medium, design: .monospaced))
-                                .foregroundStyle(Color.white.opacity(0.78))
+                                .foregroundStyle(IslandPalette.subtitle)
                                 .lineLimit(2)
                         }
 
@@ -390,38 +270,31 @@ struct IslandRootView: View {
                            let renderedAssistantPreview = SessionPreviewMarkdownRenderer.render(assistantPreview) {
                             Text(renderedAssistantPreview)
                                 .font(.system(size: 13, weight: .regular, design: .monospaced))
-                                .foregroundStyle(Color.white.opacity(0.94))
+                                .foregroundStyle(IslandPalette.title)
                                 .lineLimit(2)
                         }
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(
-                preview.isPrimary ? Color.white.opacity(0.11) : Color.white.opacity(0.05),
-                in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(Color.white.opacity(preview.isPrimary ? 0.08 : 0.04), lineWidth: 1)
-            )
+            .padding(IslandLayout.cardPadding)
+            .modifier(IslandSurface(emphasized: preview.isPrimary))
         }
         .buttonStyle(.plain)
-        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: IslandLayout.cardRadius, style: .continuous))
     }
 
     private var emptyState: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles.rectangle.stack")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(IslandPalette.subtitle)
             Text(language.text("Waiting for recent session previews", "正在等待最近的会话预览"))
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(IslandPalette.subtitle)
         }
-        .padding(16)
+        .padding(IslandLayout.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .modifier(IslandSurface())
     }
 
     private func badge(text: String, color: Color, fontSize: CGFloat = 11) -> some View {
@@ -441,24 +314,16 @@ struct IslandRootView: View {
         statusColor(for: viewModel.statusText)
     }
 
-    private var shellGradient: LinearGradient {
-        LinearGradient(
-            colors: [Color.black.opacity(0.96), Color(red: 0.10, green: 0.11, blue: 0.14)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
     @ViewBuilder
     private var shellBackground: some View {
         switch appearance {
         case .classic:
-            shellShape.fill(shellGradient)
+            shellShape.fill(IslandPalette.classicBackground)
         case .macOSGlass:
             ZStack {
                 MacOSVisualEffectView(material: .hudWindow)
-                glassTintGradient
-                glassHighlightGradient
+                IslandPalette.glassTint
+                IslandPalette.glassHighlight
             }
         }
     }
@@ -467,45 +332,13 @@ struct IslandRootView: View {
     private var shellBorder: some View {
         switch appearance {
         case .classic:
-            shellShape.strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+            shellShape.strokeBorder(IslandPalette.border, lineWidth: 1)
         case .macOSGlass:
             shellShape.strokeBorder(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.52),
-                        Color.white.opacity(0.18),
-                        Color(red: 0.30, green: 0.68, blue: 1.0).opacity(0.28),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
+                IslandPalette.glassBorder,
                 lineWidth: 1
             )
         }
-    }
-
-    private var glassTintGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.28, green: 0.10, blue: 0.44).opacity(0.22),
-                Color(red: 0.08, green: 0.17, blue: 0.38).opacity(0.16),
-                Color(red: 0.02, green: 0.34, blue: 0.72).opacity(0.20),
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
-
-    private var glassHighlightGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color.white.opacity(0.13),
-                Color.clear,
-                Color.black.opacity(0.08),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
     }
 
     private var expandedWidth: CGFloat {
@@ -539,19 +372,19 @@ struct IslandRootView: View {
     private var compactStatusColor: Color {
         switch IslandStatusPresentation.compactTone(for: viewModel.statusText) {
         case .tool:
-            return Color.orange
+            return IslandPalette.tool
         case .running:
-            return Color.yellow
+            return IslandPalette.running
         case .completed:
-            return Color.green
+            return IslandPalette.completed
         case .passive:
-            return Color.gray
+            return IslandPalette.passive
         }
     }
 
     private var shellShape: IslandShellShape {
         if isExpanded {
-            return .expanded(cornerRadius: 28)
+            return .expanded(cornerRadius: IslandLayout.shellRadius)
         }
         return .compact(
             topCornerRadius: compactShellMetrics.topCornerRadius,
@@ -564,13 +397,13 @@ struct IslandRootView: View {
     private func statusColor(for statusText: String) -> Color {
         switch statusText {
         case "Done":
-            return Color.green
+            return IslandPalette.completed
         case "Tool active":
-            return Color.orange
+            return IslandPalette.tool
         case "Running":
-            return Color.yellow
+            return IslandPalette.running
         default:
-            return Color.gray
+            return IslandPalette.passive
         }
     }
 
