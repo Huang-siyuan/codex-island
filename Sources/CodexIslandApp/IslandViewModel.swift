@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 enum IslandExpandedTab: String, CaseIterable, Identifiable {
     case sessions
     case usage
+    case settings
 
     var id: String { rawValue }
 
@@ -16,6 +17,8 @@ enum IslandExpandedTab: String, CaseIterable, Identifiable {
             return language.text("Sessions", "会话")
         case .usage:
             return language.text("Usage", "用量")
+        case .settings:
+            return language.text("Settings", "设置")
         }
     }
 
@@ -25,6 +28,8 @@ enum IslandExpandedTab: String, CaseIterable, Identifiable {
             return "message.fill"
         case .usage:
             return "chart.bar.fill"
+        case .settings:
+            return "gearshape.fill"
         }
     }
 }

@@ -1,18 +1,16 @@
-import CodexIslandCore
 import SwiftUI
 
 @main
 struct CodexIslandApplication: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    @StateObject private var launchAtLoginStore = LaunchAtLoginStore()
-
     var body: some Scene {
+        // The floating panel owns settings; suppress the standalone window's menu entry.
         Settings {
-            IslandSettingsView(
-                viewModel: appDelegate.viewModel,
-                launchAtLoginStore: launchAtLoginStore
-            )
+            EmptyView()
+        }
+        .commands {
+            CommandGroup(replacing: .appSettings) {}
         }
     }
 }

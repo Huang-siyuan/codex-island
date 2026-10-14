@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let soundPreferenceStore = SoundPreferenceStore()
 
     private lazy var notificationManager = NotificationManager(soundPreferenceStore: soundPreferenceStore)
-    private(set) lazy var viewModel = IslandViewModel(
+    private lazy var viewModel = IslandViewModel(
         focusRouter: focusRouter,
         soundPreferenceStore: soundPreferenceStore
     )

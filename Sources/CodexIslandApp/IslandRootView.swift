@@ -11,6 +11,7 @@ struct IslandRootView: View {
     private let detailRevealAnimation = Animation.spring(response: 0.24, dampingFraction: 0.88)
     private let detailHideAnimation = Animation.easeOut(duration: 0.18)
 
+    @StateObject private var launchAtLoginStore = LaunchAtLoginStore()
     @State private var isExpanded = false
     @State private var showsExpandedContent = false
     @State private var detailRevealTask: Task<Void, Never>?
@@ -140,6 +141,8 @@ struct IslandRootView: View {
                     sessionsContent
                 case .usage:
                     usageContent
+                case .settings:
+                    IslandSettingsView(viewModel: viewModel, launchAtLoginStore: launchAtLoginStore)
                 }
             }
         }
@@ -184,7 +187,7 @@ struct IslandRootView: View {
 
     private var expandedTabPicker: some View {
         HStack(spacing: 6) {
-            ForEach(IslandExpandedTab.allCases) { tab in
+            ForEach([IslandExpandedTab.sessions, .usage]) { tab in
                 Button {
                     guard viewModel.selectedExpandedTab != tab else {
                         return
@@ -227,17 +230,23 @@ struct IslandRootView: View {
     }
 
     private var settingsButton: some View {
-        SettingsLink {
+        Button {
+            viewModel.selectExpandedTab(.settings)
+        } label: {
             Image(systemName: "gearshape.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.86))
                 .frame(width: 28, height: 26)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(
+                    Color.white.opacity(viewModel.selectedExpandedTab == .settings ? 0.18 : 0.06),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
         }
         .buttonStyle(.plain)
         .help(language.text("Settings", "设置"))
         .accessibilityLabel(language.text("Settings", "设置"))
         .accessibilityIdentifier("island.settings")
+        .accessibilityAddTraits(viewModel.selectedExpandedTab == .settings ? .isSelected : [])
     }
 
     private func sessionPreviewCard(_ preview: SessionPreview) -> some View {
