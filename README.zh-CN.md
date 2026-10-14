@@ -96,3 +96,7 @@ swift build
 - CodeBuddy 会先尝试通过本地 CodeBuddy CLI 打开关联工作区，失败时回退为激活应用
 - 打包时会在本地自动生成应用图标，因此不需要手动维护单独的 `.icns` 二进制文件
 - `swift test` 已通过 `swift-testing` 接好，所以可以直接在本地包环境里执行测试
+
+## 界面设计
+
+[DESIGN.md](DESIGN.md) 记录会话、用量和面板内设置共用的配色、排版、表面与控件规范。新增界面时复用 `IslandDesign.swift` 和 `IslandControls.swift`。

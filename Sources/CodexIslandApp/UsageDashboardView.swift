@@ -11,20 +11,19 @@ struct UsageDashboardView: View {
     @AppStorage("workspaceSortMode") private var workspaceSortModeRaw = WorkspaceSortMode.usage.rawValue
     @State private var hoveredChartBarID: String?
     @State private var hoveredStatCardID: String?
-    @State private var isWorkspacePickerHovered = false
     @State private var isWorkspacePickerOpen = false
     @State private var selectedWorkspaceID: String?
 
     private let gridColumns = [
-        GridItem(.flexible(minimum: 170), spacing: 12),
-        GridItem(.flexible(minimum: 170), spacing: 12),
-        GridItem(.flexible(minimum: 170), spacing: 12),
-        GridItem(.flexible(minimum: 170), spacing: 12),
+        GridItem(.flexible(minimum: 170), spacing: IslandLayout.sectionSpacing),
+        GridItem(.flexible(minimum: 170), spacing: IslandLayout.sectionSpacing),
+        GridItem(.flexible(minimum: 170), spacing: IslandLayout.sectionSpacing),
+        GridItem(.flexible(minimum: 170), spacing: IslandLayout.sectionSpacing),
     ]
     private let secondaryGridColumns = [
-        GridItem(.flexible(minimum: 200), spacing: 12),
-        GridItem(.flexible(minimum: 200), spacing: 12),
-        GridItem(.flexible(minimum: 200), spacing: 12),
+        GridItem(.flexible(minimum: 200), spacing: IslandLayout.sectionSpacing),
+        GridItem(.flexible(minimum: 200), spacing: IslandLayout.sectionSpacing),
+        GridItem(.flexible(minimum: 200), spacing: IslandLayout.sectionSpacing),
     ]
     init(
         metric: Binding<UsageDashboardMetric>,
@@ -59,16 +58,16 @@ struct UsageDashboardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: IslandLayout.sectionSpacing) {
             header
 
-            LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 12) {
+            LazyVGrid(columns: gridColumns, alignment: .leading, spacing: IslandLayout.sectionSpacing) {
                 ForEach(Array(presentation.cards.prefix(4))) { card in
                     statCard(card)
                 }
             }
 
-            LazyVGrid(columns: secondaryGridColumns, alignment: .leading, spacing: 12) {
+            LazyVGrid(columns: secondaryGridColumns, alignment: .leading, spacing: IslandLayout.sectionSpacing) {
                 ForEach(Array(presentation.cards.dropFirst(4))) { card in
                     statCard(card)
                 }
@@ -76,11 +75,11 @@ struct UsageDashboardView: View {
 
             chartCard
 
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: IslandLayout.sectionSpacing) {
                 LazyVGrid(columns: [
-                    GridItem(.flexible(minimum: 190), spacing: 12),
-                    GridItem(.flexible(minimum: 190), spacing: 12),
-                ], spacing: 12) {
+                    GridItem(.flexible(minimum: 190), spacing: IslandLayout.sectionSpacing),
+                    GridItem(.flexible(minimum: 190), spacing: IslandLayout.sectionSpacing),
+                ], spacing: IslandLayout.sectionSpacing) {
                     ForEach(presentation.insights) { card in
                         statCard(card)
                     }
@@ -100,11 +99,10 @@ struct UsageDashboardView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Text(language.text("USAGE", "用量"))
-                .font(.system(size: 15, weight: .semibold))
-                .tracking(1.8)
-                .foregroundStyle(UsageDashboardPalette.title)
+        HStack(spacing: IslandLayout.sectionSpacing) {
+            Text(language.text("Usage", "用量"))
+                .font(IslandTypography.heading)
+                .foregroundStyle(IslandPalette.title)
                 .help(language.text(
                     "Request input + output, including cached input. Duplicate responses and inherited counters are excluded. Local usage is not a billing statement.",
                     "按请求统计输入＋输出，包含缓存输入；排除重复请求和继承的累计量。本地用量不等同于结算账单。"
@@ -115,44 +113,19 @@ struct UsageDashboardView: View {
             Spacer(minLength: 16)
 
             Text(updatedLabel)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(UsageDashboardPalette.muted)
+                .font(IslandTypography.caption)
+                .foregroundStyle(IslandPalette.muted)
 
             refreshButton
 
-            HStack(spacing: 4) {
-                ForEach(UsageDashboardMetric.allCases) { currentMetric in
-                    Button {
-                        withAnimation(.easeOut(duration: 0.16)) {
-                            metric = currentMetric
-                        }
-                    } label: {
-                        Text(currentMetric.title(language: language))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(
-                                metric == currentMetric
-                                    ? UsageDashboardPalette.title
-                                    : UsageDashboardPalette.subtitle
-                            )
-                            .frame(minWidth: 58)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 5)
-                            .background(
-                                metric == currentMetric
-                                    ? Color.white.opacity(0.12)
-                                    : Color.clear,
-                                in: Capsule()
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
+            IslandChoiceGroup(
+                title: language.text("Metric", "统计指标"),
+                options: UsageDashboardMetric.allCases,
+                selection: $metric
+            ) { currentMetric in
+                Text(currentMetric.title(language: language))
             }
-            .padding(3)
-            .background(Color.white.opacity(0.045), in: Capsule())
-            .overlay(
-                Capsule()
-                    .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
-            )
+            .fixedSize(horizontal: true, vertical: false)
         }
         .zIndex(50)
     }
@@ -173,15 +146,10 @@ struct UsageDashboardView: View {
                 Text(isRefreshing
                     ? language.text("Refreshing", "刷新中")
                     : language.text("Refresh", "刷新"))
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(IslandTypography.control)
             }
-            .foregroundStyle(isRefreshing ? UsageDashboardPalette.muted : UsageDashboardPalette.title)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
-            .background(Color.white.opacity(0.07), in: Capsule())
-            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(IslandButtonStyle())
         .fixedSize(horizontal: true, vertical: false)
         .disabled(isRefreshing)
         .help(language.text("Refresh local usage now", "立即刷新本地用量"))
@@ -199,62 +167,20 @@ struct UsageDashboardView: View {
             HStack(spacing: 8) {
                 Image(systemName: selectedWorkspaceIcon)
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(UsageDashboardPalette.accent)
+                    .foregroundStyle(IslandPalette.accent)
 
                 Text(selectedWorkspaceName)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(UsageDashboardPalette.title)
+                    .font(IslandTypography.control)
+                    .foregroundStyle(IslandPalette.title)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                Divider()
-                    .overlay(Color.white.opacity(0.14))
-                    .frame(height: 14)
-
-                ZStack {
-                    Circle()
-                        .fill(
-                            isWorkspacePickerHovered
-                                ? UsageDashboardPalette.accent.opacity(0.24)
-                                : UsageDashboardPalette.accent.opacity(0.15)
-                        )
-
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(UsageDashboardPalette.title)
-                        .rotationEffect(.degrees(isWorkspacePickerOpen ? 180 : 0))
-                }
-                .frame(width: 20, height: 20)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .rotationEffect(.degrees(isWorkspacePickerOpen ? 180 : 0))
             }
-            .padding(.leading, 12)
-            .padding(.trailing, 6)
-            .padding(.vertical, 6)
-            .background(
-                isWorkspacePickerHovered
-                    ? UsageDashboardPalette.accent.opacity(0.16)
-                    : UsageDashboardPalette.accent.opacity(0.09),
-                in: Capsule()
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(
-                        isWorkspacePickerHovered
-                            ? UsageDashboardPalette.accent.opacity(0.7)
-                            : UsageDashboardPalette.accent.opacity(0.34),
-                        lineWidth: 1
-                    )
-            )
-            .shadow(
-                color: isWorkspacePickerHovered
-                    ? UsageDashboardPalette.accent.opacity(0.16)
-                    : Color.black.opacity(0.18),
-                radius: isWorkspacePickerHovered ? 8 : 3,
-                y: 2
-            )
-            .scaleEffect(isWorkspacePickerHovered ? 1.025 : 1)
-            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(IslandButtonStyle(isSelected: isWorkspacePickerOpen || selectedWorkspaceID != nil))
         .fixedSize(horizontal: true, vertical: false)
         .overlay(alignment: .topLeading) {
             if isWorkspacePickerOpen {
@@ -264,11 +190,6 @@ struct UsageDashboardView: View {
             }
         }
         .zIndex(100)
-        .onHover { isHovering in
-            withAnimation(.easeOut(duration: 0.14)) {
-                isWorkspacePickerHovered = isHovering
-            }
-        }
         .help(language.text("Filter usage by project or topic", "按项目或话题筛选用量"))
     }
 
@@ -280,8 +201,7 @@ struct UsageDashboardView: View {
         return VStack(spacing: 0) {
             workspaceSortPicker
 
-            Divider()
-                .overlay(Color.white.opacity(0.08))
+            IslandSeparator()
 
             ScrollView {
                 LazyVStack(spacing: 2) {
@@ -293,8 +213,7 @@ struct UsageDashboardView: View {
                     )
 
                     if !workspaces.isEmpty {
-                        Divider()
-                            .overlay(Color.white.opacity(0.08))
+                        IslandSeparator()
                             .padding(.vertical, 3)
 
                         ForEach(workspaces) { workspace in
@@ -319,12 +238,12 @@ struct UsageDashboardView: View {
         }
         .frame(width: 270)
         .background {
-            floatingPanelBackground
+            IslandOverlayBackground(appearance: appearance)
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.13), lineWidth: 1)
+                .strokeBorder(IslandPalette.border, lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.5), radius: 18, y: 10)
     }
@@ -333,42 +252,16 @@ struct UsageDashboardView: View {
         HStack(spacing: 4) {
             Text(language.text("Sort", "排序"))
                 .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(UsageDashboardPalette.muted)
+                .foregroundStyle(IslandPalette.muted)
 
             Spacer(minLength: 4)
 
-            ForEach(WorkspaceSortMode.allCases) { mode in
-                Button {
-                    withAnimation(.easeOut(duration: 0.14)) {
-                        workspaceSortModeRaw = mode.rawValue
-                    }
-                } label: {
-                    Text(mode.title(language: language))
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(
-                            workspaceSortMode == mode
-                                ? UsageDashboardPalette.title
-                                : UsageDashboardPalette.subtitle
-                        )
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(
-                            workspaceSortMode == mode
-                                ? UsageDashboardPalette.accent.opacity(0.2)
-                                : Color.clear,
-                            in: Capsule()
-                        )
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(
-                                    workspaceSortMode == mode
-                                        ? UsageDashboardPalette.accent.opacity(0.42)
-                                        : Color.clear,
-                                    lineWidth: 1
-                                )
-                        )
-                }
-                .buttonStyle(.plain)
+            IslandChoiceGroup(
+                title: language.text("Sort", "排序"),
+                options: WorkspaceSortMode.allCases.map(\.rawValue),
+                selection: $workspaceSortModeRaw
+            ) { value in
+                Text((WorkspaceSortMode(rawValue: value) ?? .usage).title(language: language))
             }
         }
         .padding(.horizontal, 10)
@@ -437,13 +330,13 @@ struct UsageDashboardView: View {
         } label: {
             HStack(spacing: 9) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isSelected ? UsageDashboardPalette.accent : UsageDashboardPalette.muted)
+                    .font(IslandTypography.control)
+                    .foregroundStyle(isSelected ? IslandPalette.accent : IslandPalette.muted)
                     .frame(width: 15)
 
                 Text(title)
                     .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
-                    .foregroundStyle(isSelected ? UsageDashboardPalette.title : UsageDashboardPalette.subtitle)
+                    .foregroundStyle(isSelected ? IslandPalette.title : IslandPalette.subtitle)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
@@ -452,12 +345,13 @@ struct UsageDashboardView: View {
             .padding(.horizontal, 9)
             .frame(height: 30)
             .background(
-                isSelected ? UsageDashboardPalette.accent.opacity(0.12) : Color.clear,
+                isSelected ? IslandPalette.selectedSurface : Color.clear,
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .help(tooltip)
     }
 
@@ -488,7 +382,7 @@ struct UsageDashboardView: View {
             Text(card.label.uppercased())
                 .font(.system(size: 9, weight: .medium))
                 .tracking(1.5)
-                .foregroundStyle(UsageDashboardPalette.muted)
+                .foregroundStyle(IslandPalette.muted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.76)
 
@@ -508,23 +402,14 @@ struct UsageDashboardView: View {
 
             Text(card.caption)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(UsageDashboardPalette.subtitle)
+                .foregroundStyle(IslandPalette.subtitle)
                 .lineLimit(2)
                 .minimumScaleFactor(0.82)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, minHeight: card.compact ? 52 : 62, alignment: .topLeading)
-        .padding(12)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(
-                    hoveredStatCardID == card.id
-                        ? UsageDashboardPalette.accent.opacity(0.34)
-                        : Color.white.opacity(0.06),
-                    lineWidth: 1
-                )
-        )
+        .padding(IslandLayout.cardPadding)
+        .modifier(IslandSurface(highlighted: hoveredStatCardID == card.id))
         .shadow(
             color: hoveredStatCardID == card.id ? Color.black.opacity(0.34) : .clear,
             radius: 16,
@@ -532,7 +417,7 @@ struct UsageDashboardView: View {
         )
         .scaleEffect(hoveredStatCardID == card.id ? 1.08 : 1)
         .zIndex(hoveredStatCardID == card.id ? 10 : 0)
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: IslandLayout.cardRadius, style: .continuous))
         .onHover { isHovering in
             withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
                 hoveredStatCardID = isHovering ? card.id : nil
@@ -543,7 +428,7 @@ struct UsageDashboardView: View {
     private func statValue(_ card: UsageStatCard) -> some View {
         Text(card.value)
             .font(.system(size: card.compact ? 21 : 25, weight: .semibold))
-            .foregroundStyle(UsageDashboardPalette.title)
+            .foregroundStyle(IslandPalette.title)
             .lineLimit(1)
             .allowsTightening(true)
             .minimumScaleFactor(0.62)
@@ -553,7 +438,7 @@ struct UsageDashboardView: View {
         Text(suffix.uppercased())
             .font(.system(size: 9, weight: .medium))
             .tracking(1.1)
-            .foregroundStyle(UsageDashboardPalette.muted)
+            .foregroundStyle(IslandPalette.muted)
             .lineLimit(1)
     }
 
@@ -562,17 +447,13 @@ struct UsageDashboardView: View {
             HStack {
                 Text(presentation.chartTitle)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(UsageDashboardPalette.title)
+                    .foregroundStyle(IslandPalette.title)
             }
 
             chart
         }
-        .padding(12)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
-        )
+        .padding(IslandLayout.cardPadding)
+        .modifier(IslandSurface())
     }
 
     private var chart: some View {
@@ -588,8 +469,8 @@ struct UsageDashboardView: View {
                             .fill(
                                 LinearGradient(
                                     colors: [
-                                        UsageDashboardPalette.accent,
-                                        UsageDashboardPalette.accent.opacity(0.48),
+                                        IslandPalette.accent,
+                                        IslandPalette.accent.opacity(0.48),
                                     ],
                                     startPoint: .top,
                                     endPoint: .bottom
@@ -607,7 +488,7 @@ struct UsageDashboardView: View {
 
                         Text(bar.label)
                             .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(UsageDashboardPalette.subtitle)
+                            .foregroundStyle(IslandPalette.subtitle)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                     }
@@ -634,21 +515,21 @@ struct UsageDashboardView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(bar.label)
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(UsageDashboardPalette.muted)
+                .foregroundStyle(IslandPalette.muted)
 
             Text(exactChartValue(bar.value))
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(UsageDashboardPalette.title)
+                .foregroundStyle(IslandPalette.title)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
         .background {
-            tooltipBackground
+            IslandOverlayBackground(appearance: appearance)
         }
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                .strokeBorder(IslandPalette.border, lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.35), radius: 8, y: 4)
         .allowsHitTesting(false)
@@ -668,18 +549,18 @@ struct UsageDashboardView: View {
             Text(language.text("TOP MODELS", "常用模型"))
                 .font(.system(size: 9, weight: .medium))
                 .tracking(1.5)
-                .foregroundStyle(UsageDashboardPalette.muted)
+                .foregroundStyle(IslandPalette.muted)
 
             if presentation.topModels.isEmpty {
                 Text(language.text("No model usage found yet", "尚未发现模型用量"))
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(UsageDashboardPalette.subtitle)
+                    .foregroundStyle(IslandPalette.subtitle)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
-                    .background(cardBackground, in: Capsule())
+                    .background(IslandPalette.surface, in: Capsule())
                     .overlay(
                         Capsule()
-                            .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                            .strokeBorder(IslandPalette.border, lineWidth: 1)
                     )
             } else {
                 HStack(spacing: 18) {
@@ -696,12 +577,8 @@ struct UsageDashboardView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 86, alignment: .topLeading)
-        .padding(12)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
-        )
+        .padding(IslandLayout.cardPadding)
+        .modifier(IslandSurface())
     }
 
     private var modelShareRing: some View {
@@ -709,7 +586,7 @@ struct UsageDashboardView: View {
 
         return ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.12), lineWidth: 6)
+                .stroke(IslandPalette.emphasizedSurface, lineWidth: 6)
 
             ForEach(Array(models.enumerated()), id: \.element.id) { index, model in
                 Circle()
@@ -726,7 +603,7 @@ struct UsageDashboardView: View {
 
             Text("\(formatPercent(models.first?.sharePercent ?? 0))%")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(UsageDashboardPalette.title)
+                .foregroundStyle(IslandPalette.title)
                 .minimumScaleFactor(0.72)
                 .lineLimit(1)
         }
@@ -744,7 +621,7 @@ struct UsageDashboardView: View {
 
             Text(model.model)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(UsageDashboardPalette.title)
+                .foregroundStyle(IslandPalette.title)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -752,13 +629,13 @@ struct UsageDashboardView: View {
 
             Text("\(formatPercent(model.sharePercent))%")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(UsageDashboardPalette.subtitle)
+                .foregroundStyle(IslandPalette.subtitle)
                 .monospacedDigit()
         }
     }
 
     private func modelColor(at index: Int) -> Color {
-        index == 0 ? UsageDashboardPalette.accent : Color.white.opacity(0.52)
+        index == 0 ? IslandPalette.accent : IslandPalette.muted
     }
 
     private func modelShareStart(at index: Int, models: [LocalUsageModel]) -> Double {
@@ -774,50 +651,6 @@ struct UsageDashboardView: View {
 
     private func clampedModelShare(_ percent: Double) -> Double {
         min(max(percent / 100, 0), 1)
-    }
-
-    private var cardBackground: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color.white.opacity(0.08),
-                Color.white.opacity(0.035),
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    @ViewBuilder
-    private var floatingPanelBackground: some View {
-        switch appearance {
-        case .classic:
-            Color(red: 0.055, green: 0.06, blue: 0.07).opacity(0.99)
-        case .macOSGlass:
-            ZStack {
-                MacOSVisualEffectView(material: .hudWindow)
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.30, green: 0.12, blue: 0.46).opacity(0.30),
-                        Color(red: 0.02, green: 0.38, blue: 0.76).opacity(0.28),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var tooltipBackground: some View {
-        switch appearance {
-        case .classic:
-            Color.black.opacity(0.94)
-        case .macOSGlass:
-            ZStack {
-                MacOSVisualEffectView(material: .hudWindow)
-                Color(red: 0.12, green: 0.24, blue: 0.46).opacity(0.16)
-            }
-        }
     }
 
     private var updatedLabel: String {
@@ -870,13 +703,6 @@ private enum WorkspaceSortMode: String, CaseIterable, Identifiable {
             return language.text("Name", "名称")
         }
     }
-}
-
-private enum UsageDashboardPalette {
-    static let title = Color.white.opacity(0.95)
-    static let muted = Color.white.opacity(0.46)
-    static let subtitle = Color.white.opacity(0.68)
-    static let accent = Color(red: 0.28, green: 0.86, blue: 0.55)
 }
 
 private struct UsageStatCard: Identifiable {

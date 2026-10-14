@@ -96,3 +96,7 @@ That keeps setup lightweight and avoids manual shell wiring.
 - CodeBuddy jumps try to reopen the related workspace via the local CodeBuddy CLI, then fall back to activating the app.
 - The app icon is generated locally during packaging, so you do not need to manage a separate binary `.icns` file by hand.
 - `swift test` is wired through `swift-testing`, so the test suite can run in the local package environment.
+
+## UI design
+
+[DESIGN.md](DESIGN.md) documents the shared palette, typography, surfaces and controls for Sessions, Usage and inline Settings. Reuse `IslandDesign.swift` and `IslandControls.swift` when extending the interface.
