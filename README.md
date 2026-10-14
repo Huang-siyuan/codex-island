@@ -15,7 +15,7 @@ Codex Island lives at the top of your screen, keeps the active AI coding session
 - Shows exact daily usage when hovering over the seven-day chart
 - Supports markdown rendering in the expanded session detail area
 - Lets you click a session card to jump back into Codex, Claude Code CLI, or CodeBuddy
-- Includes an in-app sound toggle and custom completion sound picker
+- Includes a bundled two-note completion chime used by default, with mute and custom sound controls
 - Keeps completion state in the hub without showing macOS system banners by default
 - Performs first-launch setup so the local Codex wrapper is available without manual shell edits
 

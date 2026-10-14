@@ -4,6 +4,17 @@ All notable changes to Codex Island are recorded here.
 
 ## [Unreleased]
 
+### Added — 2026-10-14
+
+- 内置由正弦波合成的 0.8 秒轻柔双音完成提示音，未指定自定义音效或自定义文件失效时自动使用；静音设置保持生效。
+- 清除自定义音效后恢复内置提示音，音效按钮提示当前默认选择；应用打包时携带音频资源。
+
+### Verification — 2026-10-14
+
+- `swift test --jobs 2`：71 个测试通过，覆盖默认音、自定义音效优先、失效文件回退、静音和清除自定义选择。
+- release 构建、提示音开关脚本和发布 ZIP 检查通过；独立打包探针在禁止访问 SwiftPM 构建资源时成功加载、播放内置音。
+- 已安装并启动本地新版，安装包与构建包的可执行文件及音频一致，`codesign --verify --deep --strict` 和 `git diff --check` 通过。
+
 ### Fixed — 2026-10-09
 
 - 按逐请求 `token_usage_record.payload.usage` 统计输入＋输出，缓存输入包含在输入内，不额外相加；不使用会话或轮次累计量充当本次消耗。

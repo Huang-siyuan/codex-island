@@ -328,7 +328,7 @@ struct IslandRootView: View {
         .help(
             viewModel.customCompletionSoundName.map {
                 language.text("Custom completion sound: \($0)", "自定义完成提示音：\($0)")
-            } ?? language.text("Choose custom completion sound", "选择自定义完成提示音")
+            } ?? language.text("Built-in completion sound (click to customize)", "内置完成提示音（点击自定义）")
         )
     }
 
@@ -347,7 +347,7 @@ struct IslandRootView: View {
                 )
         }
         .buttonStyle(.plain)
-        .help(language.text("Use default completion sound", "使用默认完成提示音"))
+        .help(language.text("Use built-in completion sound", "使用内置完成提示音"))
     }
 
     private func sessionPreviewCard(_ preview: SessionPreview) -> some View {

@@ -47,14 +47,23 @@ public final class NotificationManager {
     }
 
     public static func defaultSoundPlayer(customSoundURL: URL?) {
+        completionSound(customSoundURL: customSoundURL)?.play()
+    }
+
+    static func completionSound(customSoundURL: URL?) -> NSSound? {
         if let customSoundURL,
-           FileManager.default.fileExists(atPath: customSoundURL.path),
-           let customSound = NSSound(contentsOf: customSoundURL, byReference: true) {
-            customSound.play()
-            return
+           let customSound = NSSound(contentsOf: customSoundURL, byReference: false) {
+            return customSound
         }
 
-        NSSound(named: .init("Glass"))?.play()
+        // Signed apps keep resources inside Contents/Resources; SwiftPM builds use Bundle.module.
+        let packagedBundle = Bundle.main.url(forResource: "CodexIsland_CodexIslandCore", withExtension: "bundle")
+            .flatMap { Bundle(url: $0) }
+        let resourceBundle = packagedBundle ?? Bundle.module
+        guard let builtInURL = resourceBundle.url(forResource: "Completion", withExtension: "wav") else {
+            return nil
+        }
+        return NSSound(contentsOf: builtInURL, byReference: false)
     }
 
     public static func defaultBannerPresenter(title: String, body: String) {

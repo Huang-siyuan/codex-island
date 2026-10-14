@@ -31,4 +31,9 @@ if ! grep -Fxq "Codex Island.app/Contents/MacOS/CodexIslandApp" <<<"$ZIP_LISTING
   exit 1
 fi
 
+if ! grep -Fxq "Codex Island.app/Contents/Resources/CodexIsland_CodexIslandCore.bundle/Completion.wav" <<<"$ZIP_LISTING"; then
+  echo "Zip archive does not contain the built-in completion sound." >&2
+  exit 1
+fi
+
 echo "Release zip check passed."

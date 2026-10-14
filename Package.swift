@@ -14,6 +14,7 @@ let package = Package(
         .target(
             name: "CodexIslandCore",
             path: "Sources/CodexIslandCore",
+            resources: [.process("Resources")],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("UserNotifications"),
