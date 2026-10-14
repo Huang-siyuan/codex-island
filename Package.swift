@@ -18,6 +18,7 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("UserNotifications"),
+                .linkedFramework("ServiceManagement"),
                 .linkedLibrary("sqlite3"),
             ]
         ),

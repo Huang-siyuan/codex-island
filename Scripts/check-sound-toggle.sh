@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="${0:A:h:h}"
 STORE="$ROOT_DIR/Sources/CodexIslandCore/SoundPreferenceStore.swift"
 NOTIFICATIONS="$ROOT_DIR/Sources/CodexIslandCore/NotificationManager.swift"
-VIEW="$ROOT_DIR/Sources/CodexIslandApp/IslandRootView.swift"
+VIEW="$ROOT_DIR/Sources/CodexIslandApp/IslandSettingsView.swift"
 VIEW_MODEL="$ROOT_DIR/Sources/CodexIslandApp/IslandViewModel.swift"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -14,13 +14,8 @@ if [[ ! -f "$STORE" ]]; then
   exit 1
 fi
 
-if ! rg -F -q 'toggleSoundEnabled' "$VIEW"; then
-  echo "Hub mute button is not wired to toggleSoundEnabled." >&2
-  exit 1
-fi
-
-if ! rg -F -q 'speaker.slash.fill' "$VIEW" || ! rg -F -q 'speaker.wave.2.fill' "$VIEW"; then
-  echo "Hub is missing the mute/unmute button icons." >&2
+if ! rg -F -q 'setSoundEnabled' "$VIEW"; then
+  echo "Settings sound checkbox is not wired to setSoundEnabled." >&2
   exit 1
 fi
 

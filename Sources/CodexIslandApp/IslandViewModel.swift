@@ -142,8 +142,9 @@ final class IslandViewModel: ObservableObject {
         _ = focusRouter.activateSession(preview.navigationTarget)
     }
 
-    func toggleSoundEnabled() {
-        isSoundEnabled = soundPreferenceStore.toggleSoundEnabled()
+    func setSoundEnabled(_ enabled: Bool) {
+        soundPreferenceStore.isSoundEnabled = enabled
+        isSoundEnabled = soundPreferenceStore.isSoundEnabled
     }
 
     func chooseCustomCompletionSound(language: InterfaceLanguage) {

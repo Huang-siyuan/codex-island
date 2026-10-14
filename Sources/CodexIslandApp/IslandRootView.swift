@@ -123,12 +123,7 @@ struct IslandRootView: View {
 
             HStack(spacing: 8) {
                 expandedTabPicker
-                languageToggleButton
-                soundToggleButton
-                customSoundButton
-                if viewModel.customCompletionSoundName != nil {
-                    clearCustomSoundButton
-                }
+                settingsButton
 
                 Text(sessionCountText)
                     .font(.system(size: 11, weight: .medium))
@@ -139,8 +134,6 @@ struct IslandRootView: View {
 
     private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 14) {
-            appearanceSelector
-
             Group {
                 switch viewModel.selectedExpandedTab {
                 case .sessions:
@@ -233,121 +226,18 @@ struct IslandRootView: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private var appearanceSelector: some View {
-        HStack(spacing: 10) {
-            Label(language.text("Appearance", "外观"), systemImage: "paintbrush.fill")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.58))
-
-            Spacer()
-
-            HStack(spacing: 4) {
-                ForEach(IslandAppearance.allCases) { option in
-                    Button {
-                        islandAppearanceRaw = option.rawValue
-                    } label: {
-                        Text(option.title(language: language))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(option == appearance ? Color.white : Color.white.opacity(0.60))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(
-                                option == appearance ? Color.white.opacity(0.13) : Color.clear,
-                                in: Capsule()
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(option == appearance ? .isSelected : [])
-                }
-            }
-            .padding(3)
-            .background(Color.white.opacity(0.045), in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
-        }
-        .padding(.horizontal, 2)
-    }
-
-    private var languageToggleButton: some View {
-        Button {
-            interfaceLanguageRaw = language == .english
-                ? InterfaceLanguage.simplifiedChinese.rawValue
-                : InterfaceLanguage.english.rawValue
-        } label: {
-            Text(language.toggleTitle)
-                .font(.system(size: 10, weight: .bold))
+    private var settingsButton: some View {
+        SettingsLink {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.86))
-                .frame(width: 26, height: 22)
+                .frame(width: 28, height: 26)
                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
-                )
         }
         .buttonStyle(.plain)
-        .help(language.text("Switch to Chinese", "切换到英文"))
-        .accessibilityLabel(language.text("Switch interface language to Chinese", "将界面语言切换为英文"))
-    }
-
-    private var soundToggleButton: some View {
-        Button {
-            viewModel.toggleSoundEnabled()
-        } label: {
-            Image(systemName: viewModel.isSoundEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(viewModel.isSoundEnabled ? Color.white.opacity(0.9) : Color.white.opacity(0.6))
-                .frame(width: 26, height: 22)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-        .help(
-            viewModel.isSoundEnabled
-                ? language.text("Mute completion sound", "关闭完成提示音")
-                : language.text("Enable completion sound", "开启完成提示音")
-        )
-    }
-
-    private var customSoundButton: some View {
-        Button {
-            viewModel.chooseCustomCompletionSound(language: language)
-        } label: {
-            Image(systemName: viewModel.customCompletionSoundName == nil ? "music.note" : "music.note.list")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(viewModel.customCompletionSoundName == nil ? Color.white.opacity(0.65) : Color.white.opacity(0.92))
-                .frame(width: 26, height: 22)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-        .help(
-            viewModel.customCompletionSoundName.map {
-                language.text("Custom completion sound: \($0)", "自定义完成提示音：\($0)")
-            } ?? language.text("Built-in completion sound (click to customize)", "内置完成提示音（点击自定义）")
-        )
-    }
-
-    private var clearCustomSoundButton: some View {
-        Button {
-            viewModel.clearCustomCompletionSound()
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.58))
-                .frame(width: 22, height: 22)
-                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-        .help(language.text("Use built-in completion sound", "使用内置完成提示音"))
+        .help(language.text("Settings", "设置"))
+        .accessibilityLabel(language.text("Settings", "设置"))
+        .accessibilityIdentifier("island.settings")
     }
 
     private func sessionPreviewCard(_ preview: SessionPreview) -> some View {
