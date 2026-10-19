@@ -230,7 +230,7 @@ final class CodexTranscriptEventReader {
             kind = .responseCreated
             summary = "Task started"
         case "task_complete":
-            kind = .responseCompleted
+            kind = .taskCompleted
             summary = "Completed"
         case "turn_aborted":
             kind = .responseInterrupted

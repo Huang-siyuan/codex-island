@@ -196,7 +196,7 @@ public struct LogsEventParser {
             return "Response created"
         case .responseInProgress:
             return "Working"
-        case .responseCompleted:
+        case .responseCompleted, .taskCompleted:
             return "Completed"
         case .userInputRequested:
             return "Waiting for input"

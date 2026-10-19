@@ -111,6 +111,8 @@ public enum CodexLogEventKind: String, Sendable, Equatable {
     case responseCreated
     case responseInProgress
     case responseCompleted
+    // Explicit task boundary, unlike an intermediate model response completion.
+    case taskCompleted
     case responseInterrupted
     case userInputRequested
     case toolStarted

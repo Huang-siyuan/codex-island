@@ -19,7 +19,7 @@ func codexCompletionUsesTranscriptWithEmptyLogsAndNotifiesOnce() throws {
     try fixture.append(lifecycleLine("task_complete", second: 10))
     let completed = try provider.poll()
     coordinator.apply(logEvents: completed.logEvents)
-    #expect(completed.logEvents.map(\.kind) == [.responseCompleted])
+    #expect(completed.logEvents.map(\.kind) == [.taskCompleted])
     #expect(coordinator.pendingCompletion?.threadID == "thread-1")
     coordinator.consumeCompletionNotification(for: "thread-1")
     coordinator.apply(logEvents: try provider.poll().logEvents)
@@ -62,7 +62,7 @@ func codexCompletionWaitsForWholeRecordAndHandlesInterruptAndNewTurn() throws {
     try fixture.append(String(completion[..<midpoint]))
     #expect(try provider.poll().logEvents.isEmpty)
     try fixture.append(String(completion[midpoint...]))
-    #expect(try provider.poll().logEvents.map(\.kind) == [.responseCompleted])
+    #expect(try provider.poll().logEvents.map(\.kind) == [.taskCompleted])
     try fixture.append(lifecycleLine("task_started", second: 3) + lifecycleLine("turn_aborted", second: 4))
     #expect(try provider.poll().logEvents.map(\.kind) == [.responseInterrupted])
     try fixture.append(lifecycleLine("task_complete", second: 5) + lifecycleLine("task_started", second: 6))
@@ -81,7 +81,7 @@ func codexCompletionUsesTaskLifecycleInsteadOfIntermediateModelCompletion() thro
     let provider = fixture.provider()
     #expect(try provider.poll().logEvents.map(\.kind) == [.responseCreated])
     try fixture.append(lifecycleLine("task_complete", second: 3))
-    #expect(try provider.poll().logEvents.map(\.kind) == [.responseCompleted])
+    #expect(try provider.poll().logEvents.map(\.kind) == [.taskCompleted])
 }
 
 @Test
@@ -90,7 +90,7 @@ func codexCompletionStillWorksWhenDiagnosticLogsCannotBeRead() throws {
     defer { fixture.remove() }
     try fixture.execute("drop table logs", at: fixture.logs)
     try fixture.append(lifecycleLine("task_complete", second: 1))
-    #expect(try fixture.provider().poll().logEvents.map(\.kind) == [.responseCompleted])
+    #expect(try fixture.provider().poll().logEvents.map(\.kind) == [.taskCompleted])
 }
 
 @Test
@@ -113,7 +113,7 @@ func codexTranscriptReaderHandlesLargeRecordsTruncationAndReplacement() throws {
     try fixture.append(lifecycleLine("task_started", second: 1) + largeRecord)
     #expect(try reader.latestEvent(at: fixture.transcript, threadID: "thread-1")?.kind == .responseCreated)
     try fixture.append(largeRecord + lifecycleLine("task_complete", second: 2))
-    #expect(try reader.latestEvent(at: fixture.transcript, threadID: "thread-1")?.kind == .responseCompleted)
+    #expect(try reader.latestEvent(at: fixture.transcript, threadID: "thread-1")?.kind == .taskCompleted)
     // Truncation retains the inode; atomic replacement changes it.
     try lifecycleLine("turn_aborted", second: 3).write(to: fixture.transcript, atomically: false, encoding: .utf8)
     #expect(try reader.latestEvent(at: fixture.transcript, threadID: "thread-1")?.kind == .responseInterrupted)
@@ -397,5 +397,64 @@ func codexInputResumeRetainsToolLogsAndTaskCompletion() throws {
     let provider = fixture.provider()
     #expect(try provider.poll().logEvents.count == 2)
     try fixture.append(lifecycleLine("task_complete", second: 5))
-    #expect(try provider.poll().logEvents.map(\.kind) == [.responseCompleted])
+    #expect(try provider.poll().logEvents.map(\.kind) == [.taskCompleted])
+}
+
+@Test
+func codexTaskCompletionNotifiesOnFirstPollWithoutQuietTime() async throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    let completionTime = fixture.start.addingTimeInterval(10.123)
+    let provider = fixture.provider()
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    #expect(try provider.poll().logEvents.map(\.kind) == [.responseCreated])
+    let engine = PollingEngine(
+        coordinator: SessionCoordinator(now: { completionTime }),
+        providers: [provider]
+    )
+    try fixture.append(lifecycleLine("task_complete", second: 10))
+    let result = await engine.pollOnce()
+    #expect(result.completionNotification?.threadID == "thread-1")
+    #expect(result.snapshot.statusText == "Done")
+    await engine.consumeCompletionNotification(for: "thread-1")
+    #expect(await engine.pollOnce().completionNotification == nil)
+}
+
+@Test
+func codexTaskCompletionIgnoresMetadataDelayButNewTurnCancelsIt() throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    let coordinator = SessionCoordinator(now: { fixture.start.addingTimeInterval(10.123) })
+    let provider = fixture.provider()
+    try fixture.append(lifecycleLine("task_complete", second: 10))
+    let completed = try provider.poll()
+    coordinator.apply(threadSnapshots: completed.threadSnapshots)
+    coordinator.apply(logEvents: completed.logEvents)
+    // Metadata can be persisted after the terminal record; it does not reopen a task.
+    coordinator.apply(threadSnapshots: [ThreadSnapshot(
+        threadID: "thread-1", title: "Updated title", source: "desktop", cwd: nil,
+        updatedAt: fixture.start.addingTimeInterval(11)
+    )])
+    #expect(coordinator.pendingCompletion?.threadID == "thread-1")
+    try fixture.append(lifecycleLine("task_started", second: 12))
+    coordinator.apply(logEvents: try provider.poll().logEvents)
+    #expect(coordinator.pendingCompletion == nil)
+    #expect(coordinator.currentSnapshot.statusText == "Running")
+}
+
+@Test
+func codexDiagnosticCompletionStillWaitsForQuietTime() async throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    try fixture.execute(
+        "insert into logs values (1, \(Int(fixture.start.timeIntervalSince1970) + 2), 'INFO', 'test', 'response.completed', 'thread-1', null)",
+        at: fixture.logs
+    )
+    let engine = PollingEngine(
+        coordinator: SessionCoordinator(now: { fixture.start.addingTimeInterval(2) }),
+        providers: [fixture.provider()]
+    )
+    let result = await engine.pollOnce()
+    #expect(result.completionNotification == nil)
+    #expect(result.snapshot.statusText == "Running")
 }
