@@ -100,16 +100,23 @@ struct IslandRootView: View {
                 .font(.system(size: IslandStatusPresentation.compactFontSize, weight: .semibold))
                 .lineLimit(1)
 
-            if let text = IslandStatusPresentation.unreadBadgeText(count: viewModel.unreadCodexThreadCount) {
+            if let text = IslandStatusPresentation.unreadText(
+                count: viewModel.unreadCodexThreadCount, language: language
+            ) {
+                Rectangle()
+                    .fill(IslandPalette.separator)
+                    .frame(
+                        width: IslandStatusPresentation.compactUnreadSeparatorWidth,
+                        height: IslandStatusPresentation.compactUnreadSeparatorHeight
+                    )
+                    .accessibilityHidden(true)
+
                 Text(text)
                     .font(IslandTypography.control)
                     .monospacedDigit()
-                    .foregroundStyle(IslandPalette.onAccent)
-                    .frame(
-                        width: IslandStatusPresentation.compactUnreadBadgeWidth,
-                        height: IslandStatusPresentation.compactUnreadBadgeHeight
-                    )
-                    .background(IslandPalette.unread, in: Capsule())
+                    .foregroundStyle(IslandPalette.unread)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .accessibilityLabel(unreadAccessibilityLabel)
             }
         }
@@ -385,7 +392,10 @@ struct IslandRootView: View {
     }
 
     private var compactShellWidth: CGFloat {
-        max(IslandStatusPresentation.preferredCompactWidth, ceil(viewModel.compactBarWidth))
+        max(
+            IslandStatusPresentation.compactWidth(unreadCount: viewModel.unreadCodexThreadCount, language: language),
+            ceil(viewModel.compactBarWidth)
+        )
     }
 
     private var compactShellMetrics: CompactIslandShellMetrics {

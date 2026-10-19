@@ -35,18 +35,58 @@ func unreadCountIncludesOlderThreadsAndDropsArchivedOrDeletedThreads() throws {
     defer { fixture.remove() }
     let ids = (1...12).map { "thread-\($0)" }
     for id in ids {
-        try fixture.execute("insert into threads values ('\(id)', 0)")
+        try fixture.execute("insert into threads (id, archived) values ('\(id)', 0)")
     }
-    try fixture.execute("insert into threads values ('archived', 1)")
+    try fixture.execute("insert into threads (id, archived) values ('archived', 1)")
     try fixture.writeState(ids: ids + ["archived", "deleted", "thread-1"])
     #expect(fixture.reader().readCount() == 12)
+}
+
+@Test
+func unreadCountExcludesInternalThreadsButPreservesOrdinaryConversationSources() throws {
+    let fixture = try UnreadFixture()
+    defer { fixture.remove() }
+    // Both serialized subagent metadata and legacy source names occur in local state.
+    try fixture.execute("""
+        insert into threads (id, archived, source, thread_source) values
+        ('desktop', 0, 'vscode', 'user'),
+        ('cli', 0, 'cli', null),
+        ('exec', 0, 'exec', null),
+        ('app-server', 0, 'appServer', 'agent_created_thread'),
+        ('spawn', 0, '{"subagent":{"thread_spawn":{"parent_thread_id":"desktop","depth":1}}}', null),
+        ('review', 0, '{"subagent":"review"}', null),
+        ('compact', 0, 'subAgentCompact', null),
+        ('legacy-spawn', 0, 'subAgentThreadSpawn', null),
+        ('hidden', 0, 'vscode', 'chatgpt_hidden'),
+        ('suggestion', 0, 'vscode', 'ambient_suggestions'),
+        ('unknown', 0, 'future-source', null)
+        """)
+    try fixture.writeState(ids: [
+        "desktop", "cli", "exec", "app-server", "spawn", "review", "compact",
+        "legacy-spawn", "hidden", "suggestion", "unknown",
+    ])
+    #expect(fixture.reader().readCount() == 4)
+}
+
+@Test
+func unreadCountIsZeroWhenOnlyHistoricalSubagentsRemainUnread() throws {
+    let fixture = try UnreadFixture()
+    defer { fixture.remove() }
+    for index in 1...21 {
+        try fixture.execute("""
+            insert into threads (id, archived, source) values
+            ('child-\(index)', 0, '{"subagent":{"thread_spawn":{"parent_thread_id":"parent","depth":2}}}')
+            """)
+    }
+    try fixture.writeState(ids: (1...21).map { "child-\($0)" })
+    #expect(fixture.reader().readCount() == 0)
 }
 
 @Test
 func unreadCountRefreshesAfterReadChangesAndAccountSwitch() throws {
     let fixture = try UnreadFixture()
     defer { fixture.remove() }
-    try fixture.execute("insert into threads values ('one', 0), ('two', 0)")
+    try fixture.execute("insert into threads (id, archived) values ('one', 0), ('two', 0)")
     try fixture.writeState(ids: ["one", "two"])
     let reader = fixture.reader()
     #expect(reader.readCount() == 2)
@@ -64,7 +104,7 @@ func unreadCountRefreshesAfterReadChangesAndAccountSwitch() throws {
 func unreadCountInvalidatesWhenArchiveChangesAndFailsClosedOnDamagedFiles() throws {
     let fixture = try UnreadFixture()
     defer { fixture.remove() }
-    try fixture.execute("insert into threads values ('one', 0)")
+    try fixture.execute("insert into threads (id, archived) values ('one', 0)")
     try fixture.writeState(ids: ["one"])
     let reader = fixture.reader()
     #expect(reader.readCount() == 1)
@@ -82,7 +122,7 @@ func unreadCountInvalidatesWhenArchiveChangesAndFailsClosedOnDamagedFiles() thro
 func pollingDeliversReadChangesEvenWithoutSessionEvents() async throws {
     let fixture = try UnreadFixture()
     defer { fixture.remove() }
-    try fixture.execute("insert into threads values ('one', 0)")
+    try fixture.execute("insert into threads (id, archived) values ('one', 0)")
     try fixture.writeState(ids: ["one"])
     let engine = PollingEngine(unreadStateReader: fixture.reader(), providers: [])
     #expect(await engine.pollOnce().unreadCodexThreadCount == 1)
@@ -140,7 +180,7 @@ private struct UnreadFixture {
         root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try unreadAuth().write(to: authURL)
-        try execute("create table threads (id text, archived integer)")
+        try execute("create table threads (id text, archived integer, source text default 'vscode', thread_source text)")
     }
 
     func writeState(ids: [String]) throws {
