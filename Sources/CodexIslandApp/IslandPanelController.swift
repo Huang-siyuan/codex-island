@@ -19,7 +19,7 @@ final class IslandPanelController {
         self.viewModel = viewModel
         self.screenLocator = screenLocator
         topInset = 0
-        collapsedMinimumWidth = IslandStatusPresentation.preferredCompactWidth
+        collapsedMinimumWidth = IslandStatusPresentation.minimumCompactWidth
         minimumSize = CGSize(width: collapsedMinimumWidth, height: 1)
         topAttachmentState = TopAttachmentState(
             value: MenuBarGeometry.resolvedCompactTopAttachmentOverlap(visibleHeight: 32)

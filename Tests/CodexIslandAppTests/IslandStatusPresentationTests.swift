@@ -44,10 +44,11 @@ func compactShellMetricsFavorANotchProfile() {
 }
 
 @Test
-func compactWidthTracksTheLongestStatusLabel() {
+func compactWidthIncludesOnlyVisibleElements() {
     #expect(
-        IslandStatusPresentation.resolvedCompactWidth(forLabelWidths: [56, 49, 64], unreadLabelWidth: 60) == 182
+        IslandStatusPresentation.resolvedCompactWidth(statusLabelWidth: 64, unreadLabelWidth: 60) == 182
     )
+    #expect(IslandStatusPresentation.resolvedCompactWidth(statusLabelWidth: 64) == 109)
 }
 
 @Test
@@ -64,12 +65,26 @@ func unreadTextHidesUnknownAndZeroAndShowsExactLocalizedCount() {
 }
 
 @Test
-func compactWidthKeepsOrdinaryCountsStableAndGrowsForLongUnreadText() {
-    let baseline = IslandStatusPresentation.preferredCompactWidth
+func compactWidthShrinksWhenUnreadClearsAndTracksActualDigitCount() {
     for language in [InterfaceLanguage.english, .simplifiedChinese] {
-        for count: Int? in [nil, 0, 3, 21, 99] {
-            #expect(IslandStatusPresentation.compactWidth(unreadCount: count, language: language) == baseline)
-        }
+        let empty = IslandStatusPresentation.compactWidth(statusText: "Running", unreadCount: 0, language: language)
+        let unknown = IslandStatusPresentation.compactWidth(statusText: "Running", unreadCount: nil, language: language)
+        let single = IslandStatusPresentation.compactWidth(statusText: "Running", unreadCount: 3, language: language)
+        let double = IslandStatusPresentation.compactWidth(statusText: "Running", unreadCount: 21, language: language)
+        let long = IslandStatusPresentation.compactWidth(statusText: "Running", unreadCount: 123456, language: language)
+        #expect(empty == unknown)
+        #expect(empty < single)
+        #expect(single < double)
+        #expect(double < long)
+        #expect(empty > IslandStatusPresentation.minimumCompactWidth)
     }
-    #expect(IslandStatusPresentation.compactWidth(unreadCount: 123456, language: .english) > baseline)
+}
+
+@Test
+func compactWidthTracksCurrentStatusAndLanguage() {
+    let chinese = IslandStatusPresentation.compactWidth(statusText: "Running", unreadCount: 0, language: .simplifiedChinese)
+    let english = IslandStatusPresentation.compactWidth(statusText: "Running", unreadCount: 0, language: .english)
+    let waiting = IslandStatusPresentation.compactWidth(statusText: "Waiting for input", unreadCount: 0, language: .english)
+    #expect(chinese < english)
+    #expect(english < waiting)
 }

@@ -77,6 +77,7 @@ struct IslandRootView: View {
         }
         .animation(shellExpandAnimation, value: viewModel.selectedExpandedTab)
         .animation(shellExpandAnimation, value: interfaceLanguageRaw)
+        .animation(.easeInOut(duration: 0.18), value: compactShellWidth)
         .animation(.easeInOut(duration: 0.22), value: islandAppearanceRaw)
         .onTapGesture {
             guard !isExpanded else {
@@ -393,7 +394,9 @@ struct IslandRootView: View {
 
     private var compactShellWidth: CGFloat {
         max(
-            IslandStatusPresentation.compactWidth(unreadCount: viewModel.unreadCodexThreadCount, language: language),
+            IslandStatusPresentation.compactWidth(
+                statusText: viewModel.statusText, unreadCount: viewModel.unreadCodexThreadCount, language: language
+            ),
             ceil(viewModel.compactBarWidth)
         )
     }
