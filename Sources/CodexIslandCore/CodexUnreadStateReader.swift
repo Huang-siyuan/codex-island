@@ -37,10 +37,17 @@ public final class CodexUnreadStateReader {
               FileManager.default.fileExists(atPath: databaseURL.path) else {
             return nil
         }
-        // Include older unread threads too, but exclude archived/deleted threads.
+        // Saved unread IDs also contain hidden historical subagent threads. Limit
+        // the join to ordinary conversation sources, including older conversations.
+        // These strings are Codex's persisted protocol values, not display labels.
         let threads: [LocalThread] = try SQLiteShell().query(
             databaseURL: databaseURL,
-            query: "select id from threads where archived = 0;"
+            query: """
+                select id from threads
+                where archived = 0
+                  and source in ('cli', 'vscode', 'exec', 'appServer')
+                  and coalesce(thread_source, '') not in ('chatgpt_hidden', 'ambient_suggestions');
+                """
         )
         return unreadIDs.intersection(threads.map(\.id)).count
     }
