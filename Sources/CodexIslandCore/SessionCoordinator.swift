@@ -9,6 +9,7 @@ public final class SessionCoordinator {
     private var latestAssistantPreviews: [String: SessionMessagePreview] = [:]
     private var completionCandidates: [String: Date] = [:]
     private var deliveredCompletionCandidates: [String: Date] = [:]
+    private var deliveredInputRequests: [String: Date] = [:]
     private let now: () -> Date
     private let completionIdleThreshold: TimeInterval
     private let completionConfirmationThreshold: TimeInterval
@@ -43,6 +44,7 @@ public final class SessionCoordinator {
             latestAssistantPreviews.removeValue(forKey: key)
             completionCandidates.removeValue(forKey: key)
             deliveredCompletionCandidates.removeValue(forKey: key)
+            deliveredInputRequests.removeValue(forKey: key)
         }
     }
 
@@ -57,6 +59,8 @@ public final class SessionCoordinator {
                 // A full next turn can finish between polls; its completion is a new
                 // candidate even if the intervening start record was not observed.
                 completionCandidates[key] = event.timestamp
+            case .userInputRequested:
+                completionCandidates.removeValue(forKey: key)
             case .responseInterrupted:
                 completionCandidates.removeValue(forKey: key)
                 deliveredCompletionCandidates.removeValue(forKey: key)
@@ -113,6 +117,19 @@ public final class SessionCoordinator {
         threadSnapshots.values
             .filter { shouldNotifyCompletion(for: $0.sessionKey) }
             .min { activityDate(for: $0) < activityDate(for: $1) }
+    }
+
+    public var pendingUserInput: CodexLogEvent? {
+        latestLogEvents.values
+            .filter {
+                $0.kind == .userInputRequested && threadSnapshots[$0.sessionKey] != nil
+                    && $0.timestamp > (deliveredInputRequests[$0.sessionKey] ?? .distantPast)
+            }
+            .min { $0.timestamp < $1.timestamp }
+    }
+
+    public func consumeUserInputNotification(for event: CodexLogEvent) {
+        deliveredInputRequests[event.sessionKey] = event.timestamp
     }
 
     public var currentSnapshot: IslandSnapshot {
@@ -190,6 +207,8 @@ public final class SessionCoordinator {
             priority = 1
         } else if let event = latestLogEvents[key] {
             switch event.kind {
+            case .userInputRequested:
+                priority = 5
             case .toolStarted, .toolUpdated:
                 priority = 4
             case .responseCreated, .responseInProgress, .toolCompleted, .responseCompleted:
@@ -241,6 +260,8 @@ public final class SessionCoordinator {
             return "Watching \(provider.displayName)"
         }
         switch event.kind {
+        case .userInputRequested:
+            return "Waiting for input"
         case .responseCreated, .responseInProgress, .toolCompleted:
             return "Running"
         case .toolStarted, .toolUpdated:
@@ -259,7 +280,7 @@ public final class SessionCoordinator {
         switch event.kind {
         case .toolStarted, .toolUpdated, .toolCompleted:
             return event.summary
-        case .responseCreated, .responseInProgress, .responseCompleted, .responseInterrupted:
+        case .responseCreated, .responseInProgress, .responseCompleted, .responseInterrupted, .userInputRequested:
             return nil
         }
     }

@@ -398,7 +398,7 @@ struct IslandRootView: View {
         switch statusText {
         case "Done":
             return IslandPalette.completed
-        case "Tool active":
+        case "Tool active", "Waiting for input":
             return IslandPalette.tool
         case "Running":
             return IslandPalette.running

@@ -153,16 +153,16 @@ final class IslandViewModel: ObservableObject {
     }
 
     func previewCompletionSound() {
-        // Manual preview remains available when automatic completion sounds are muted.
+        // Manual preview remains available when automatic notification sounds are muted.
         NotificationManager.defaultSoundPlayer(customSoundURL: soundPreferenceStore.customCompletionSoundURL)
     }
 
     func chooseCustomCompletionSound(language: InterfaceLanguage) {
         let panel = NSOpenPanel()
-        panel.title = language.text("Choose Completion Sound", "选择完成提示音")
+        panel.title = language.text("Choose Notification Sound", "选择提示音")
         panel.message = language.text(
-            "Pick an audio file to play when an AI task finishes.",
-            "选择 AI 任务完成时播放的音频文件。"
+            "Pick an audio file for task completion and Codex input requests.",
+            "选择任务完成或 Codex 等待输入时播放的音频文件。"
         )
         panel.prompt = language.text("Use Sound", "使用此音效")
         panel.allowsMultipleSelection = false

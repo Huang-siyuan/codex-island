@@ -198,6 +198,8 @@ public struct LogsEventParser {
             return "Working"
         case .responseCompleted:
             return "Completed"
+        case .userInputRequested:
+            return "Waiting for input"
         case .responseInterrupted:
             return "Stopped"
         case .toolStarted:

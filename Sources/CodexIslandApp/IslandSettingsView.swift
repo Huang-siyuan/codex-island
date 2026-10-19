@@ -96,13 +96,14 @@ struct IslandSettingsView: View {
     }
 
     private var soundSettings: some View {
-        settingsSection(language.text("Completion sound", "完成提示音")) {
-            Toggle(language.text("Play completion sound", "播放完成提示音"), isOn: Binding(
+        settingsSection(language.text("Notification sound", "提示音")) {
+            Toggle(language.text("Play notification sound", "播放提示音"), isOn: Binding(
                 get: { viewModel.isSoundEnabled },
                 set: { viewModel.setSoundEnabled($0) }
             ))
             .toggleStyle(IslandCheckboxStyle())
             .accessibilityIdentifier("settings.completionSound")
+            .help(language.text("Play when a task finishes or Codex requests input", "任务完成或 Codex 等待输入时播放"))
 
             IslandSeparator()
 
@@ -117,7 +118,7 @@ struct IslandSettingsView: View {
                         Label(language.text("Preview", "试听"), systemImage: "play.fill")
                     }
                     .accessibilityIdentifier("settings.previewCompletionSound")
-                    .help(language.text("Play the current completion sound", "试听当前完成提示音"))
+                    .help(language.text("Play the current notification sound", "试听当前提示音"))
                 }
                 Text(viewModel.customCompletionSoundName ?? language.text("Built-in chime", "内置双音提示音"))
                     .lineLimit(2)

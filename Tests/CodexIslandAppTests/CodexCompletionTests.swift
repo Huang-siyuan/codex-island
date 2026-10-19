@@ -208,3 +208,194 @@ private struct CompletionFixture {
         try? FileManager.default.removeItem(at: root)
     }
 }
+
+private func inputRecord(type: String, second: Int, callID: String, name: String? = nil, output: String? = nil) throws -> String {
+    struct Record: Encodable {
+        struct Payload: Encodable {
+            let type: String
+            let call_id: String
+            let name: String?
+            let output: String?
+        }
+        let timestamp: String
+        let type = "response_item"
+        let payload: Payload
+    }
+    let record = Record(
+        timestamp: String(format: "2026-10-19T12:00:%02d.123Z", second),
+        payload: .init(type: type, call_id: callID, name: name, output: output)
+    )
+    return String(decoding: try JSONEncoder().encode(record), as: UTF8.self) + "\n"
+}
+
+@Test(arguments: ["request_user_input", "functions.request_user_input"])
+func codexInputRequestTracksSynchronousReply(name: String) throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    let provider = fixture.provider()
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    _ = try provider.poll()
+    try fixture.append(inputRecord(type: "function_call", second: 2, callID: "input", name: name))
+    #expect(try provider.poll().logEvents.map(\.kind) == [.userInputRequested])
+    #expect(try provider.poll().logEvents.isEmpty)
+    try fixture.append(inputRecord(type: "function_call_output", second: 3, callID: "other", output: "done"))
+    #expect(try provider.poll().logEvents.isEmpty)
+    try fixture.append(inputRecord(type: "function_call_output", second: 4, callID: "input", output: "user answer"))
+    #expect(try provider.poll().logEvents.map(\.kind) == [.responseInProgress])
+    // Reconstructing a cached file must not resurrect a question already answered.
+    #expect(try fixture.provider().poll().logEvents.map(\.kind) == [.responseInProgress])
+}
+
+@Test(arguments: ["request_user_input_async", "functions.request_user_input_async"])
+func codexAsyncInputAcknowledgementDoesNotResolveQuestion(name: String) throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    try fixture.append(inputRecord(type: "function_call", second: 2, callID: "input", name: name))
+    try fixture.append(inputRecord(type: "function_call_output", second: 3, callID: "input", output: "{\"accepted\":true}"))
+    let provider = fixture.provider()
+    #expect(try provider.poll().logEvents.map(\.kind) == [.userInputRequested])
+    try fixture.append(inputRecord(type: "function_call_output", second: 4, callID: "background", output: "done"))
+    #expect(try provider.poll().logEvents.isEmpty)
+    try fixture.append(lifecycleLine("user_message", second: 5))
+    #expect(try provider.poll().logEvents.map(\.kind) == [.responseInProgress])
+    #expect(try fixture.provider().poll().logEvents.map(\.kind) == [.responseInProgress])
+}
+
+@Test
+func codexInputDoesNotNotifyHistoricalOrAlreadyAnsweredRequests() throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    try fixture.append(inputRecord(type: "function_call", second: 2, callID: "input", name: "request_user_input"))
+    let provider = fixture.provider(startedAt: fixture.start.addingTimeInterval(3))
+    #expect(try provider.poll().logEvents.isEmpty)
+    try fixture.append(inputRecord(type: "function_call_output", second: 4, callID: "input", output: "cancelled"))
+    try fixture.append(inputRecord(type: "function_call", second: 5, callID: "next", name: "request_user_input"))
+    try fixture.append(inputRecord(type: "function_call_output", second: 6, callID: "next", output: "answer"))
+    #expect(try provider.poll().logEvents.map(\.kind) == [.responseInProgress])
+}
+
+@Test(arguments: ["task_complete", "turn_aborted", "task_started"])
+func codexInputClearedByTaskLifecycle(type: String) throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    let provider = fixture.provider()
+    _ = try provider.poll()
+    try fixture.append(inputRecord(type: "function_call", second: 2, callID: "input", name: "request_user_input_async"))
+    #expect(try provider.poll().logEvents.map(\.kind) == [.userInputRequested])
+    try fixture.append(lifecycleLine(type, second: 3))
+    #expect(try provider.poll().logEvents.first?.kind != .userInputRequested)
+}
+
+@Test
+func codexInputIgnoresOrdinaryToolsAndFailedAsyncRequests() throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    let provider = fixture.provider()
+    _ = try provider.poll()
+    try fixture.append(inputRecord(type: "function_call", second: 2, callID: "tool", name: "exec_command"))
+    #expect(try provider.poll().logEvents.isEmpty)
+    try fixture.append(inputRecord(type: "function_call", second: 3, callID: "input", name: "request_user_input_async"))
+    try fixture.append(inputRecord(type: "function_call_output", second: 4, callID: "input", output: "{\"accepted\":false}"))
+    #expect(try provider.poll().logEvents.map(\.kind) == [.responseInProgress])
+}
+
+@MainActor
+@Test
+func codexInputPipelinePlaysOncePerRequestAndRespectsMute() throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    let suiteName = UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let soundStore = SoundPreferenceStore(userDefaults: defaults)
+    let customURL = URL(fileURLWithPath: "/tmp/input-sound.wav")
+    soundStore.customCompletionSoundURL = customURL
+    var sounds = 0
+    var banners = 0
+    let manager = NotificationManager(
+        soundPreferenceStore: soundStore,
+        bannerPresenter: { _, _ in banners += 1 },
+        soundPlayer: { url in
+            #expect(url == customURL)
+            sounds += 1
+        }
+    )
+    let coordinator = SessionCoordinator()
+    let provider = fixture.provider()
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    let initial = try provider.poll()
+    coordinator.apply(threadSnapshots: initial.threadSnapshots)
+    coordinator.apply(logEvents: initial.logEvents)
+    try fixture.append(inputRecord(type: "function_call", second: 2, callID: "input", name: "request_user_input"))
+    coordinator.apply(logEvents: try provider.poll().logEvents)
+    #expect(coordinator.currentSnapshot.statusText == "Waiting for input")
+    #expect(coordinator.pendingCompletion == nil)
+    let firstRequest = try #require(coordinator.pendingUserInput)
+    manager.notifyUserInputRequested()
+    coordinator.consumeUserInputNotification(for: firstRequest)
+    coordinator.apply(logEvents: try provider.poll().logEvents)
+    #expect(coordinator.pendingUserInput == nil)
+    #expect(sounds == 1)
+
+    // A distinct request seconds later must not be lost to the completion cooldown.
+    try fixture.append(inputRecord(type: "function_call_output", second: 3, callID: "input", output: "answer"))
+    try fixture.append(inputRecord(type: "function_call", second: 4, callID: "next", name: "request_user_input"))
+    let next = try provider.poll()
+    coordinator.apply(logEvents: next.logEvents)
+    let secondRequest = try #require(coordinator.pendingUserInput)
+    manager.notifyUserInputRequested()
+    coordinator.consumeUserInputNotification(for: secondRequest)
+    #expect(coordinator.pendingUserInput == nil)
+    #expect(sounds == 2)
+    soundStore.isSoundEnabled = false
+    manager.notifyUserInputRequested()
+    #expect(sounds == 2)
+    #expect(banners == 0)
+}
+
+@Test
+func inputNotificationIsIndependentOfOtherActiveSessionsAndCompletion() async {
+    let now = Date()
+    let coordinator = SessionCoordinator(now: { now })
+    coordinator.apply(threadSnapshots: ["input", "running", "done"].map {
+        ThreadSnapshot(threadID: $0, title: $0, source: "desktop", cwd: nil, updatedAt: now.addingTimeInterval(-10))
+    })
+    coordinator.apply(logEvents: [
+        CodexLogEvent(threadID: "input", kind: .userInputRequested, toolName: nil, summary: "Input", timestamp: now),
+        CodexLogEvent(threadID: "running", kind: .toolStarted, toolName: "exec", summary: "Tool", timestamp: now),
+        CodexLogEvent(threadID: "done", kind: .responseCompleted, toolName: nil, summary: "Done", timestamp: now.addingTimeInterval(-10)),
+    ])
+    let engine = PollingEngine(coordinator: coordinator, providers: [])
+    let result = await engine.pollOnce()
+    #expect(result.userInputNotification?.threadID == "input")
+    #expect(result.completionNotification?.threadID == "done")
+    #expect(result.snapshot.primaryThreadID == "input")
+    if let request = result.userInputNotification {
+        await engine.consumeUserInputNotification(for: request)
+    }
+    #expect(await engine.pollOnce().userInputNotification == nil)
+    #expect(InterfaceLanguage.simplifiedChinese.statusText(for: "Waiting for input") == "等待输入")
+    #expect(InterfaceLanguage.english.compactStatusText(for: "Waiting for input") == "Input needed")
+    #expect(IslandStatusPresentation.compactTone(for: "Waiting for input") == .tool)
+}
+
+@Test
+func codexInputResumeRetainsToolLogsAndTaskCompletion() throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    try fixture.append(inputRecord(type: "function_call", second: 2, callID: "input", name: "request_user_input"))
+    try fixture.append(inputRecord(type: "function_call_output", second: 3, callID: "input", output: "answer"))
+    try fixture.execute(
+        "insert into logs values (1, \(Int(fixture.start.timeIntervalSince1970) + 4), 'INFO', 'test', 'response.in_progress', 'thread-1', null)",
+        at: fixture.logs
+    )
+    let provider = fixture.provider()
+    #expect(try provider.poll().logEvents.count == 2)
+    try fixture.append(lifecycleLine("task_complete", second: 5))
+    #expect(try provider.poll().logEvents.map(\.kind) == [.responseCompleted])
+}

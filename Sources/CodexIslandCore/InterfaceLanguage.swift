@@ -37,6 +37,8 @@ public enum InterfaceLanguage: String, CaseIterable, Sendable {
             return text("Starting", "启动中")
         case "Running":
             return text("Running", "运行中")
+        case "Waiting for input":
+            return text("Input needed", "等待输入")
         case "Tool active":
             return text("Tool active", "工具执行中")
         case "Done":
@@ -50,6 +52,8 @@ public enum InterfaceLanguage: String, CaseIterable, Sendable {
 
     public func compactStatusText(for statusText: String) -> String {
         switch statusText {
+        case "Waiting for input":
+            return text("Input needed", "等待输入")
         case "Tool active":
             return text("Tool active", "工具中")
         case "Running":
