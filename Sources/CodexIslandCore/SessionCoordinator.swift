@@ -55,7 +55,7 @@ public final class SessionCoordinator {
             latestActivityTimestamps[key] = max(latestActivityTimestamps[key] ?? .distantPast, event.timestamp)
 
             switch event.kind {
-            case .responseCompleted:
+            case .responseCompleted, .taskCompleted:
                 // A full next turn can finish between polls; its completion is a new
                 // candidate even if the intervening start record was not observed.
                 completionCandidates[key] = event.timestamp
@@ -211,7 +211,7 @@ public final class SessionCoordinator {
                 priority = 5
             case .toolStarted, .toolUpdated:
                 priority = 4
-            case .responseCreated, .responseInProgress, .toolCompleted, .responseCompleted:
+            case .responseCreated, .responseInProgress, .toolCompleted, .responseCompleted, .taskCompleted:
                 priority = 3
             case .responseInterrupted:
                 priority = 1
@@ -266,7 +266,7 @@ public final class SessionCoordinator {
             return "Running"
         case .toolStarted, .toolUpdated:
             return "Tool active"
-        case .responseCompleted:
+        case .responseCompleted, .taskCompleted:
             return "Running"
         case .responseInterrupted:
             return "Stopped"
@@ -280,7 +280,7 @@ public final class SessionCoordinator {
         switch event.kind {
         case .toolStarted, .toolUpdated, .toolCompleted:
             return event.summary
-        case .responseCreated, .responseInProgress, .responseCompleted, .responseInterrupted, .userInputRequested:
+        case .responseCreated, .responseInProgress, .responseCompleted, .taskCompleted, .responseInterrupted, .userInputRequested:
             return nil
         }
     }
@@ -297,6 +297,11 @@ public final class SessionCoordinator {
             return false
         }
 
+        // task_complete already confirms the whole turn ended. Quiet-time detection
+        // is only needed for providers/fallback logs that report model responses.
+        if latestLogEvents[sessionKey]?.kind == .taskCompleted {
+            return true
+        }
         return now().timeIntervalSince(lastActivity(for: sessionKey)) >= completionConfirmationDeadline
     }
 
