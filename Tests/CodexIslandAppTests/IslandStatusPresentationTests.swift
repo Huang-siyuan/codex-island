@@ -46,18 +46,30 @@ func compactShellMetricsFavorANotchProfile() {
 @Test
 func compactWidthTracksTheLongestStatusLabel() {
     #expect(
-        IslandStatusPresentation.resolvedCompactWidth(forLabelWidths: [56, 49, 64]) == 139
+        IslandStatusPresentation.resolvedCompactWidth(forLabelWidths: [56, 49, 64], unreadLabelWidth: 60) == 182
     )
 }
 
 @Test
-func unreadBadgeHidesUnknownAndZeroAndCapsOnlyTheDisplay() {
-    #expect(IslandStatusPresentation.unreadBadgeText(count: nil) == nil)
-    #expect(IslandStatusPresentation.unreadBadgeText(count: 0) == nil)
-    #expect(IslandStatusPresentation.unreadBadgeText(count: 1) == "1")
-    #expect(IslandStatusPresentation.unreadBadgeText(count: 9) == "9")
-    #expect(IslandStatusPresentation.unreadBadgeText(count: 21) == "9+")
+func unreadTextHidesUnknownAndZeroAndShowsExactLocalizedCount() {
+    #expect(IslandStatusPresentation.unreadText(count: nil, language: .english) == nil)
+    #expect(IslandStatusPresentation.unreadText(count: 0, language: .simplifiedChinese) == nil)
+    #expect(IslandStatusPresentation.unreadText(count: 3, language: .simplifiedChinese) == "3 未读")
+    #expect(IslandStatusPresentation.unreadText(count: 3, language: .english) == "3 unread")
+    #expect(IslandStatusPresentation.unreadText(count: 21, language: .simplifiedChinese) == "21 未读")
+    #expect(IslandStatusPresentation.unreadText(count: 1234, language: .english) == "1234 unread")
     #expect(IslandStatusPresentation.unreadAccessibilityLabel(count: 21, language: .english) == "21 unread Codex conversations")
     #expect(IslandStatusPresentation.unreadAccessibilityLabel(count: 21, language: .simplifiedChinese) == "21 个 Codex 会话未读")
     #expect(IslandStatusPresentation.unreadAccessibilityLabel(count: nil, language: .simplifiedChinese).contains("暂不可用"))
+}
+
+@Test
+func compactWidthKeepsOrdinaryCountsStableAndGrowsForLongUnreadText() {
+    let baseline = IslandStatusPresentation.preferredCompactWidth
+    for language in [InterfaceLanguage.english, .simplifiedChinese] {
+        for count: Int? in [nil, 0, 3, 21, 99] {
+            #expect(IslandStatusPresentation.compactWidth(unreadCount: count, language: language) == baseline)
+        }
+    }
+    #expect(IslandStatusPresentation.compactWidth(unreadCount: 123456, language: .english) > baseline)
 }
