@@ -14,13 +14,16 @@ public struct CompletionNotificationRequest: Sendable, Equatable {
 
 public struct PollingResult: Sendable, Equatable {
     public let snapshot: IslandSnapshot
+    public let userInputNotification: CodexLogEvent?
     public let completionNotification: CompletionNotificationRequest?
 
     public init(
         snapshot: IslandSnapshot,
-        completionNotification: CompletionNotificationRequest?
+        completionNotification: CompletionNotificationRequest?,
+        userInputNotification: CodexLogEvent? = nil
     ) {
         self.snapshot = snapshot
+        self.userInputNotification = userInputNotification
         self.completionNotification = completionNotification
     }
 }
@@ -90,7 +93,8 @@ public actor PollingEngine {
             }
             return PollingResult(
                 snapshot: snapshot,
-                completionNotification: completionNotification
+                completionNotification: completionNotification,
+                userInputNotification: coordinator.pendingUserInput
             )
         } catch {
             return PollingResult(
@@ -98,6 +102,10 @@ public actor PollingEngine {
                 completionNotification: nil
             )
         }
+    }
+
+    public func consumeUserInputNotification(for event: CodexLogEvent) {
+        coordinator.consumeUserInputNotification(for: event)
     }
 
     public func consumeCompletionNotification(for provider: ProviderKind, threadID: String) {

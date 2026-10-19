@@ -35,7 +35,7 @@ public enum IslandStatusPresentation {
 
     public static func compactTone(for statusText: String) -> IslandStatusTone {
         switch statusText {
-        case "Tool active":
+        case "Tool active", "Waiting for input":
             return .tool
         case "Running":
             return .running
@@ -50,6 +50,7 @@ public enum IslandStatusPresentation {
         "Watching",
         "Running",
         "Tool active",
+        "Input needed",
     ]
 
     private static func measureCompactLabelWidth(_ text: String) -> CGFloat {

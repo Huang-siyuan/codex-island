@@ -46,6 +46,14 @@ public final class NotificationManager {
         }
     }
 
+    /// The coordinator consumes each request once; separate requests must not share
+    /// the completion cooldown, since the user may answer and be asked again quickly.
+    public func notifyUserInputRequested() {
+        if soundPreferenceStore.isSoundEnabled {
+            soundPlayer(soundPreferenceStore.customCompletionSoundURL)
+        }
+    }
+
     public static func defaultSoundPlayer(customSoundURL: URL?) {
         completionSound(customSoundURL: customSoundURL)?.play()
     }

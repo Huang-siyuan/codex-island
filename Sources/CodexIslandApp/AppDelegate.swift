@@ -70,6 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let result = await pollingEngine.pollOnce()
             viewModel.apply(snapshot: result.snapshot)
 
+            if let request = result.userInputNotification {
+                notificationManager.notifyUserInputRequested()
+                await pollingEngine.consumeUserInputNotification(for: request)
+            }
+
             if let completion = result.completionNotification {
                 notificationManager.notifyCompletion(
                     provider: completion.provider,

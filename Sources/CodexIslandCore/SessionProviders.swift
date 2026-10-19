@@ -118,12 +118,12 @@ public final class CodexSessionProvider: SessionProvider {
                 // A model response can finish before the task does. Once a transcript has
                 // lifecycle events, only task_complete may confirm completion for this thread.
                 if lifecycle != lastTranscriptEvents[thread.threadID] {
-                    if lifecycle.kind != .responseCompleted || lifecycle.timestamp >= monitoringStartedAt {
+                    if ![.responseCompleted, .userInputRequested].contains(lifecycle.kind) || lifecycle.timestamp >= monitoringStartedAt {
                         logEvents.append(lifecycle)
                     }
                     lastTranscriptEvents[thread.threadID] = lifecycle
                 }
-                if lifecycle.kind == .responseCreated {
+                if [.responseCreated, .responseInProgress].contains(lifecycle.kind) {
                     logEvents.append(contentsOf: parsedLogEvents.filter {
                         $0.timestamp >= lifecycle.timestamp && $0.kind != .responseCompleted
                     })
