@@ -36,19 +36,19 @@ public final class CodexStateStore {
         self.environment = environment
     }
 
-    func currentDataVersion() -> DataSourceVersion {
+    func currentDataVersion(transcriptURLs: [URL] = []) -> DataSourceVersion {
         DataSourceVersion.capture(files: [
             environment.stateStoreURL,
             URL(fileURLWithPath: environment.stateStoreURL.path + "-wal"),
             environment.logsStoreURL,
             URL(fileURLWithPath: environment.logsStoreURL.path + "-wal"),
             environment.sessionIndexURL,
-        ])
+        ] + transcriptURLs)
     }
 
     public func fetchRecentThreads(limit: Int = 6) throws -> [ThreadSnapshot] {
         let query = """
-        select id, title, source, cwd, updated_at, first_user_message
+        select id, title, source, cwd, updated_at, first_user_message, rollout_path
         from threads
         where archived = 0
         order by updated_at desc
@@ -72,7 +72,8 @@ public final class CodexStateStore {
                     source: $0.source,
                     cwd: $0.cwd,
                     updatedAt: Date(timeIntervalSince1970: TimeInterval($0.updatedAt)),
-                    firstUserMessage: $0.firstUserMessage
+                    firstUserMessage: $0.firstUserMessage,
+                    rolloutPath: $0.rolloutPath
                 )
             }
         } catch {
@@ -178,6 +179,7 @@ private struct ThreadRow: Decodable {
     let cwd: String?
     let updatedAt: Int64
     let firstUserMessage: String?
+    let rolloutPath: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -186,6 +188,7 @@ private struct ThreadRow: Decodable {
         case cwd
         case updatedAt = "updated_at"
         case firstUserMessage = "first_user_message"
+        case rolloutPath = "rollout_path"
     }
 }
 

@@ -81,17 +81,13 @@ public actor PollingEngine {
             }
 
             let snapshot = coordinator.currentSnapshot
-            let completionNotification = snapshot.shouldNotifyCompletion
-                ? snapshot.activeProvider.flatMap { provider in
-                    snapshot.primaryThreadID.map {
-                        CompletionNotificationRequest(
-                            provider: provider,
-                            threadID: $0,
-                            threadTitle: snapshot.threadTitle
-                        )
-                    }
-                }
-                : nil
+            let completionNotification = coordinator.pendingCompletion.map {
+                CompletionNotificationRequest(
+                    provider: $0.provider,
+                    threadID: $0.threadID,
+                    threadTitle: $0.title
+                )
+            }
             return PollingResult(
                 snapshot: snapshot,
                 completionNotification: completionNotification

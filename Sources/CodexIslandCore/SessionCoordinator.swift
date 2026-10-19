@@ -54,9 +54,9 @@ public final class SessionCoordinator {
 
             switch event.kind {
             case .responseCompleted:
-                if completionCandidates[key] == nil {
-                    completionCandidates[key] = event.timestamp
-                }
+                // A full next turn can finish between polls; its completion is a new
+                // candidate even if the intervening start record was not observed.
+                completionCandidates[key] = event.timestamp
             case .responseInterrupted:
                 completionCandidates.removeValue(forKey: key)
                 deliveredCompletionCandidates.removeValue(forKey: key)
@@ -106,6 +106,13 @@ public final class SessionCoordinator {
 
     public func consumeCompletionNotification(for threadID: String) {
         consumeCompletionNotification(for: .codex, threadID: threadID)
+    }
+
+    // Completion delivery must not depend on which running session owns the island.
+    public var pendingCompletion: ThreadSnapshot? {
+        threadSnapshots.values
+            .filter { shouldNotifyCompletion(for: $0.sessionKey) }
+            .min { activityDate(for: $0) < activityDate(for: $1) }
     }
 
     public var currentSnapshot: IslandSnapshot {
