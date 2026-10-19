@@ -67,7 +67,7 @@ final class IslandViewModel: ObservableObject {
     @Published var usageSnapshot: LocalUsageSnapshot?
     @Published var isUsageRefreshing = false
     @Published var compactBarHeight: CGFloat = 32
-    @Published var compactBarWidth: CGFloat = IslandStatusPresentation.preferredCompactWidth
+    @Published var compactBarWidth: CGFloat = IslandStatusPresentation.minimumCompactWidth
     @Published var compactTopAttachmentOverlap: CGFloat = MenuBarGeometry.resolvedCompactTopAttachmentOverlap(
         visibleHeight: 32
     )
@@ -189,7 +189,7 @@ final class IslandViewModel: ObservableObject {
     @discardableResult
     func updateCompactBarLayout(_ layout: MenuBarGeometry.CompactBarLayout) -> Bool {
         let normalizedHeight = max(22, ceil(layout.height))
-        let normalizedWidth = max(IslandStatusPresentation.preferredCompactWidth, ceil(layout.width))
+        let normalizedWidth = max(IslandStatusPresentation.minimumCompactWidth, ceil(layout.width))
         let normalizedTopAttachmentOverlap = max(0, ceil(layout.topAttachmentOverlap))
 
         let heightChanged = abs(compactBarHeight - normalizedHeight) > 0.5

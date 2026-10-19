@@ -15,8 +15,7 @@ public enum IslandStatusPresentation {
     public static let compactHorizontalPadding: CGFloat = 12
     public static let compactUnreadSeparatorWidth: CGFloat = 1
     public static let compactUnreadSeparatorHeight: CGFloat = 12
-    public static let compactUnreadReservedWidth = measureCompactLabelWidth("99 unread")
-    public static let preferredCompactWidth: CGFloat = resolvedCompactWidth(forLabelWidths: compactCandidateLabels.map(measureCompactLabelWidth))
+    public static let minimumCompactWidth = resolvedCompactWidth(statusLabelWidth: 0)
 
     public static func compactLabelText(for statusText: String) -> String {
         InterfaceLanguage.english.compactStatusText(for: statusText)
@@ -31,13 +30,13 @@ public enum IslandStatusPresentation {
     }
 
     public static func resolvedCompactWidth(
-        forLabelWidths labelWidths: [CGFloat],
-        unreadLabelWidth: CGFloat = compactUnreadReservedWidth
+        statusLabelWidth: CGFloat,
+        unreadLabelWidth: CGFloat? = nil
     ) -> CGFloat {
-        let widestLabel = labelWidths.max() ?? 0
-        // Reserve room for ordinary counts; grow for longer counts instead of clipping text.
-        let contentWidth = compactIndicatorSize + compactItemSpacing + widestLabel
-            + compactItemSpacing + compactUnreadSeparatorWidth + compactItemSpacing + unreadLabelWidth
+        var contentWidth = compactIndicatorSize + compactItemSpacing + statusLabelWidth
+        if let unreadLabelWidth {
+            contentWidth += compactItemSpacing + compactUnreadSeparatorWidth + compactItemSpacing + unreadLabelWidth
+        }
         return ceil(contentWidth + (compactHorizontalPadding * 2) + 8)
     }
 
@@ -48,11 +47,15 @@ public enum IslandStatusPresentation {
         return language.text("\(count) unread", "\(count) 未读")
     }
 
-    public static func compactWidth(unreadCount: Int?, language: InterfaceLanguage) -> CGFloat {
-        let textWidth = unreadText(count: unreadCount, language: language).map(measureCompactLabelWidth) ?? 0
+    public static func compactWidth(statusText: String, unreadCount: Int?, language: InterfaceLanguage) -> CGFloat {
+        // Match the visible localized status and the control font's monospaced digits.
+        // Missing unread text also removes the separator and both adjacent gaps.
+        let unreadWidth = unreadText(count: unreadCount, language: language).map {
+            measureCompactLabelWidth($0, font: .monospacedDigitSystemFont(ofSize: 11, weight: .semibold))
+        }
         return resolvedCompactWidth(
-            forLabelWidths: compactCandidateLabels.map(measureCompactLabelWidth),
-            unreadLabelWidth: max(compactUnreadReservedWidth, textWidth)
+            statusLabelWidth: measureCompactLabelWidth(compactLabelText(for: statusText, language: language)),
+            unreadLabelWidth: unreadWidth
         )
     }
 
@@ -79,16 +82,12 @@ public enum IslandStatusPresentation {
         }
     }
 
-    private static let compactCandidateLabels = [
-        "Watching",
-        "Running",
-        "Tool active",
-        "Input needed",
-    ]
-
-    private static func measureCompactLabelWidth(_ text: String) -> CGFloat {
+    private static func measureCompactLabelWidth(
+        _ text: String,
+        font: NSFont = .systemFont(ofSize: compactFontSize, weight: .semibold)
+    ) -> CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: compactFontSize, weight: .semibold),
+            .font: font,
         ]
         return ceil((text as NSString).size(withAttributes: attributes).width)
     }
