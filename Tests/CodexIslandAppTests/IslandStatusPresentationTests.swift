@@ -46,6 +46,18 @@ func compactShellMetricsFavorANotchProfile() {
 @Test
 func compactWidthTracksTheLongestStatusLabel() {
     #expect(
-        IslandStatusPresentation.resolvedCompactWidth(forLabelWidths: [56, 49, 64]) == 109
+        IslandStatusPresentation.resolvedCompactWidth(forLabelWidths: [56, 49, 64]) == 139
     )
+}
+
+@Test
+func unreadBadgeHidesUnknownAndZeroAndCapsOnlyTheDisplay() {
+    #expect(IslandStatusPresentation.unreadBadgeText(count: nil) == nil)
+    #expect(IslandStatusPresentation.unreadBadgeText(count: 0) == nil)
+    #expect(IslandStatusPresentation.unreadBadgeText(count: 1) == "1")
+    #expect(IslandStatusPresentation.unreadBadgeText(count: 9) == "9")
+    #expect(IslandStatusPresentation.unreadBadgeText(count: 21) == "9+")
+    #expect(IslandStatusPresentation.unreadAccessibilityLabel(count: 21, language: .english) == "21 unread Codex conversations")
+    #expect(IslandStatusPresentation.unreadAccessibilityLabel(count: 21, language: .simplifiedChinese) == "21 个 Codex 会话未读")
+    #expect(IslandStatusPresentation.unreadAccessibilityLabel(count: nil, language: .simplifiedChinese).contains("暂不可用"))
 }

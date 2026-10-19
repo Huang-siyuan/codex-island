@@ -18,6 +18,7 @@ enum IslandPalette {
     static let tool = Color.orange
     static let running = Color.yellow
     static let completed = accent
+    static let unread = accent
     static let passive = Color.gray
     static let error = Color.red
 

@@ -14,38 +14,45 @@ public struct CompletionNotificationRequest: Sendable, Equatable {
 
 public struct PollingResult: Sendable, Equatable {
     public let snapshot: IslandSnapshot
+    public let unreadCodexThreadCount: Int?
     public let userInputNotification: CodexLogEvent?
     public let completionNotification: CompletionNotificationRequest?
 
     public init(
         snapshot: IslandSnapshot,
         completionNotification: CompletionNotificationRequest?,
-        userInputNotification: CodexLogEvent? = nil
+        userInputNotification: CodexLogEvent? = nil,
+        unreadCodexThreadCount: Int? = nil
     ) {
         self.snapshot = snapshot
+        self.unreadCodexThreadCount = unreadCodexThreadCount
         self.userInputNotification = userInputNotification
         self.completionNotification = completionNotification
     }
 }
 
 public actor PollingEngine {
+    private let unreadStateReader: CodexUnreadStateReader
     private let coordinator: SessionCoordinator
     private let providers: [any SessionProvider]
     private var lastPollAtByProvider: [ProviderKind: Date] = [:]
 
     public init(
         coordinator: SessionCoordinator = SessionCoordinator(),
+        unreadStateReader: CodexUnreadStateReader = CodexUnreadStateReader(),
         providers: [any SessionProvider] = [
             CodexSessionProvider(),
             ClaudeCodeSessionProvider(),
             CodeBuddySessionProvider(),
         ]
     ) {
+        self.unreadStateReader = unreadStateReader
         self.coordinator = coordinator
         self.providers = providers
     }
 
     public func pollOnce() -> PollingResult {
+        let unreadCount = unreadStateReader.readCount()
         do {
             let now = Date()
             for provider in providers {
@@ -94,12 +101,14 @@ public actor PollingEngine {
             return PollingResult(
                 snapshot: snapshot,
                 completionNotification: completionNotification,
-                userInputNotification: coordinator.pendingUserInput
+                userInputNotification: coordinator.pendingUserInput,
+                unreadCodexThreadCount: unreadCount
             )
         } catch {
             return PollingResult(
                 snapshot: fallbackSnapshot(errorDescription: error.localizedDescription),
-                completionNotification: nil
+                completionNotification: nil,
+                unreadCodexThreadCount: unreadCount
             )
         }
     }

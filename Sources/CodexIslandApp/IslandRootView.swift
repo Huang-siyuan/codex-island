@@ -94,13 +94,36 @@ struct IslandRootView: View {
             Circle()
                 .fill(compactStatusColor)
                 .frame(width: IslandStatusPresentation.compactIndicatorSize, height: IslandStatusPresentation.compactIndicatorSize)
+                .accessibilityHidden(true)
 
             Text(compactStatusText)
                 .font(.system(size: IslandStatusPresentation.compactFontSize, weight: .semibold))
                 .lineLimit(1)
+
+            if let text = IslandStatusPresentation.unreadBadgeText(count: viewModel.unreadCodexThreadCount) {
+                Text(text)
+                    .font(IslandTypography.control)
+                    .monospacedDigit()
+                    .foregroundStyle(IslandPalette.onAccent)
+                    .frame(
+                        width: IslandStatusPresentation.compactUnreadBadgeWidth,
+                        height: IslandStatusPresentation.compactUnreadBadgeHeight
+                    )
+                    .background(IslandPalette.unread, in: Capsule())
+                    .accessibilityLabel(unreadAccessibilityLabel)
+            }
         }
+        .accessibilityElement(children: .combine)
+        .help(unreadAccessibilityLabel)
         .frame(maxWidth: .infinity, alignment: .center)
         .offset(y: compactTopAttachmentOverlap / 2)
+    }
+
+    private var unreadAccessibilityLabel: String {
+        IslandStatusPresentation.unreadAccessibilityLabel(
+            count: viewModel.unreadCodexThreadCount,
+            language: language
+        )
     }
 
     private var expandedHeader: some View {
