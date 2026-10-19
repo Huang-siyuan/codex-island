@@ -107,8 +107,18 @@ struct IslandSettingsView: View {
             IslandSeparator()
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(language.text("Sound", "音效"))
-                    .foregroundStyle(IslandPalette.subtitle)
+                HStack {
+                    Text(language.text("Sound", "音效"))
+                        .foregroundStyle(IslandPalette.subtitle)
+                    Spacer()
+                    Button {
+                        viewModel.previewCompletionSound()
+                    } label: {
+                        Label(language.text("Preview", "试听"), systemImage: "play.fill")
+                    }
+                    .accessibilityIdentifier("settings.previewCompletionSound")
+                    .help(language.text("Play the current completion sound", "试听当前完成提示音"))
+                }
                 Text(viewModel.customCompletionSoundName ?? language.text("Built-in chime", "内置双音提示音"))
                     .lineLimit(2)
                     .truncationMode(.middle)
