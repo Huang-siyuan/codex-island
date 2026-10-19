@@ -52,6 +52,9 @@ public final class CodexSessionProvider: SessionProvider {
     public let kind: ProviderKind = .codex
 
     private let trackedThreadLimit: Int
+    private let transcriptReader = CodexTranscriptEventReader()
+    private let monitoringStartedAt: Date
+    private var lastTranscriptEvents: [String: CodexLogEvent] = [:]
     private let parser: LogsEventParser
     private let previewParser: SessionPreviewParser
     private let store: CodexStateStore
@@ -61,13 +64,15 @@ public final class CodexSessionProvider: SessionProvider {
     private var hasCachedResult = false
 
     public init(
-        trackedThreadLimit: Int = 3,
+        trackedThreadLimit: Int = 6,
         parser: LogsEventParser = LogsEventParser(),
         previewParser: SessionPreviewParser = SessionPreviewParser(),
         store: CodexStateStore = CodexStateStore(),
-        lastSeenLogIDByThread: [String: Int64] = [:]
+        lastSeenLogIDByThread: [String: Int64] = [:],
+        monitoringStartedAt: Date = Date()
     ) {
         self.trackedThreadLimit = trackedThreadLimit
+        self.monitoringStartedAt = monitoringStartedAt
         self.parser = parser
         self.previewParser = previewParser
         self.store = store
@@ -75,7 +80,9 @@ public final class CodexSessionProvider: SessionProvider {
     }
 
     public func poll() throws -> ProviderPollResult {
-        let dataVersion = store.currentDataVersion()
+        let dataVersion = store.currentDataVersion(
+            transcriptURLs: cachedThreadSnapshots.compactMap { $0.rolloutPath.map { URL(fileURLWithPath: $0) } }
+        )
         if hasCachedResult, dataVersion == lastDataVersion {
             return ProviderPollResult(
                 provider: kind,
@@ -90,7 +97,8 @@ public final class CodexSessionProvider: SessionProvider {
         let afterIDsByThread = trackedThreads.reduce(into: [String: Int64]()) { partialResult, thread in
             partialResult[thread.threadID] = lastSeenLogIDByThread[thread.threadID] ?? 0
         }
-        let fetchedRows = try store.fetchLogRows(afterIDsByThread: afterIDsByThread)
+        // Transcript lifecycle events remain usable when the optional diagnostic log store is unavailable.
+        let fetchedRows = (try? store.fetchLogRows(afterIDsByThread: afterIDsByThread)) ?? []
         let rowsByThread = Dictionary(grouping: fetchedRows, by: { $0.threadID ?? "" })
 
         var logEvents: [CodexLogEvent] = []
@@ -102,7 +110,27 @@ public final class CodexSessionProvider: SessionProvider {
                 lastSeenLogIDByThread[thread.threadID] = newestRow.id
             }
             previews.append(contentsOf: rows.compactMap(previewParser.parse(row:)))
-            logEvents.append(contentsOf: rows.compactMap(parser.parse(row:)))
+            let parsedLogEvents = rows.compactMap(parser.parse(row:))
+            if let path = thread.rolloutPath,
+               let lifecycle = try? transcriptReader.latestEvent(
+                   at: URL(fileURLWithPath: path), threadID: thread.threadID
+               ) {
+                // A model response can finish before the task does. Once a transcript has
+                // lifecycle events, only task_complete may confirm completion for this thread.
+                if lifecycle != lastTranscriptEvents[thread.threadID] {
+                    if lifecycle.kind != .responseCompleted || lifecycle.timestamp >= monitoringStartedAt {
+                        logEvents.append(lifecycle)
+                    }
+                    lastTranscriptEvents[thread.threadID] = lifecycle
+                }
+                if lifecycle.kind == .responseCreated {
+                    logEvents.append(contentsOf: parsedLogEvents.filter {
+                        $0.timestamp >= lifecycle.timestamp && $0.kind != .responseCompleted
+                    })
+                }
+            } else {
+                logEvents.append(contentsOf: parsedLogEvents)
+            }
         }
 
         let result = ProviderPollResult(

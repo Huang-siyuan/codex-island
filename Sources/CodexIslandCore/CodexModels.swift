@@ -49,6 +49,7 @@ public struct ThreadSnapshot: Sendable, Equatable {
     public let cwd: String?
     public let updatedAt: Date
     public let firstUserMessage: String?
+    public let rolloutPath: String?
 
     public init(
         provider: ProviderKind = .codex,
@@ -57,7 +58,8 @@ public struct ThreadSnapshot: Sendable, Equatable {
         source: String,
         cwd: String?,
         updatedAt: Date,
-        firstUserMessage: String? = nil
+        firstUserMessage: String? = nil,
+        rolloutPath: String? = nil
     ) {
         self.provider = provider
         self.threadID = threadID
@@ -66,6 +68,7 @@ public struct ThreadSnapshot: Sendable, Equatable {
         self.cwd = cwd
         self.updatedAt = updatedAt
         self.firstUserMessage = firstUserMessage
+        self.rolloutPath = rolloutPath
     }
 
     public var sessionKey: String {
