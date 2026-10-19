@@ -57,6 +57,7 @@ final class IslandViewModel: ObservableObject {
     @Published var latestToolSummary: String?
     @Published var sourceLabel: String = "AI Tools"
     @Published var activeSessionCount: Int = 0
+    @Published var unreadCodexThreadCount: Int?
     @Published var sessionPreviews: [SessionPreview] = []
     @Published var setupMessage: String?
     @Published var isSoundEnabled: Bool

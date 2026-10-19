@@ -69,6 +69,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         while !Task.isCancelled {
             let result = await pollingEngine.pollOnce()
             viewModel.apply(snapshot: result.snapshot)
+            if viewModel.unreadCodexThreadCount != result.unreadCodexThreadCount {
+                viewModel.unreadCodexThreadCount = result.unreadCodexThreadCount
+            }
 
             if let request = result.userInputNotification {
                 notificationManager.notifyUserInputRequested()

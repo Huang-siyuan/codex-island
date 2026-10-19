@@ -13,6 +13,9 @@ public enum IslandStatusPresentation {
     public static let compactIndicatorSize: CGFloat = 7
     public static let compactItemSpacing: CGFloat = 6
     public static let compactHorizontalPadding: CGFloat = 12
+    public static let compactUnreadBadgeWidth: CGFloat = 24
+    public static let compactUnreadBadgeHeight: CGFloat = 18
+    public static let compactUnreadDisplayLimit = 9
     public static let preferredCompactWidth: CGFloat = resolvedCompactWidth(forLabelWidths: compactCandidateLabels.map(measureCompactLabelWidth))
 
     public static func compactLabelText(for statusText: String) -> String {
@@ -29,8 +32,27 @@ public enum IslandStatusPresentation {
 
     public static func resolvedCompactWidth(forLabelWidths labelWidths: [CGFloat]) -> CGFloat {
         let widestLabel = labelWidths.max() ?? 0
+        // Reserve badge space even at zero to avoid resizing the shell as read state changes.
         let contentWidth = compactIndicatorSize + compactItemSpacing + widestLabel
+            + compactItemSpacing + compactUnreadBadgeWidth
         return ceil(contentWidth + (compactHorizontalPadding * 2) + 8)
+    }
+
+    public static func unreadBadgeText(count: Int?) -> String? {
+        guard let count, count > 0 else {
+            return nil
+        }
+        return count > compactUnreadDisplayLimit ? "\(compactUnreadDisplayLimit)+" : String(count)
+    }
+
+    public static func unreadAccessibilityLabel(count: Int?, language: InterfaceLanguage) -> String {
+        guard let count else {
+            return language.text("Codex unread status unavailable", "Codex 未读状态暂不可用")
+        }
+        return language.text(
+            "\(count) unread Codex conversations",
+            "\(count) 个 Codex 会话未读"
+        )
     }
 
     public static func compactTone(for statusText: String) -> IslandStatusTone {
