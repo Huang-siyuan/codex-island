@@ -152,6 +152,11 @@ final class IslandViewModel: ObservableObject {
         isSoundEnabled = soundPreferenceStore.isSoundEnabled
     }
 
+    func previewCompletionSound() {
+        // Manual preview remains available when automatic completion sounds are muted.
+        NotificationManager.defaultSoundPlayer(customSoundURL: soundPreferenceStore.customCompletionSoundURL)
+    }
+
     func chooseCustomCompletionSound(language: InterfaceLanguage) {
         let panel = NSOpenPanel()
         panel.title = language.text("Choose Completion Sound", "选择完成提示音")
