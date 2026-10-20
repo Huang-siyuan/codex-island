@@ -289,7 +289,9 @@ struct IslandRootView: View {
                                 if viewModel.isUnread(preview) {
                                     IslandUnreadBadge(language: language)
                                 }
-                                badge(text: preview.sourceLabel, color: IslandPalette.emphasizedSurface)
+                                if preview.provider != .codex {
+                                    badge(text: preview.sourceLabel, color: IslandPalette.emphasizedSurface)
+                                }
                                 badge(
                                     text: language.statusText(for: preview.statusText),
                                     color: statusColor(for: preview.statusText).opacity(0.2)
