@@ -14,7 +14,8 @@ public struct CompletionNotificationRequest: Sendable, Equatable {
 
 public struct PollingResult: Sendable, Equatable {
     public let snapshot: IslandSnapshot
-    public let unreadCodexThreadCount: Int?
+    public let unreadCodexThreadIDs: Set<String>?
+    public var unreadCodexThreadCount: Int? { unreadCodexThreadIDs?.count }
     public let userInputNotification: CodexLogEvent?
     public let completionNotification: CompletionNotificationRequest?
 
@@ -22,10 +23,10 @@ public struct PollingResult: Sendable, Equatable {
         snapshot: IslandSnapshot,
         completionNotification: CompletionNotificationRequest?,
         userInputNotification: CodexLogEvent? = nil,
-        unreadCodexThreadCount: Int? = nil
+        unreadCodexThreadIDs: Set<String>? = nil
     ) {
         self.snapshot = snapshot
-        self.unreadCodexThreadCount = unreadCodexThreadCount
+        self.unreadCodexThreadIDs = unreadCodexThreadIDs
         self.userInputNotification = userInputNotification
         self.completionNotification = completionNotification
     }
@@ -52,7 +53,7 @@ public actor PollingEngine {
     }
 
     public func pollOnce() -> PollingResult {
-        let unreadCount = unreadStateReader.readCount()
+        let unreadThreadIDs = unreadStateReader.readThreadIDs()
         do {
             let now = Date()
             for provider in providers {
@@ -102,13 +103,13 @@ public actor PollingEngine {
                 snapshot: snapshot,
                 completionNotification: completionNotification,
                 userInputNotification: coordinator.pendingUserInput,
-                unreadCodexThreadCount: unreadCount
+                unreadCodexThreadIDs: unreadThreadIDs
             )
         } catch {
             return PollingResult(
                 snapshot: fallbackSnapshot(errorDescription: error.localizedDescription),
                 completionNotification: nil,
-                unreadCodexThreadCount: unreadCount
+                unreadCodexThreadIDs: unreadThreadIDs
             )
         }
     }

@@ -8,7 +8,7 @@ public final class CodexUnreadStateReader {
     private let authURL: URL
     private let databaseURL: URL
     private var lastVersion: DataSourceVersion?
-    private var cachedCount: Int?
+    private var cachedThreadIDs: Set<String>?
 
     public init(environment: AppEnvironment = .default) {
         globalStateURL = environment.codexHome.appendingPathComponent(".codex-global-state.json")
@@ -17,20 +17,24 @@ public final class CodexUnreadStateReader {
     }
 
     public func readCount() -> Int? {
+        readThreadIDs()?.count
+    }
+
+    public func readThreadIDs() -> Set<String>? {
         let version = DataSourceVersion.capture(files: [
             globalStateURL, authURL, databaseURL,
             URL(fileURLWithPath: databaseURL.path + "-wal"),
         ])
         if version == lastVersion {
-            return cachedCount
+            return cachedThreadIDs
         }
-        // Do not retain a count from another account, or turn a failed read into zero.
-        cachedCount = try? loadCount()
+        // Do not retain unread IDs from another account, or treat a failed read as empty.
+        cachedThreadIDs = try? loadThreadIDs()
         lastVersion = version
-        return cachedCount
+        return cachedThreadIDs
     }
 
-    private func loadCount() throws -> Int? {
+    private func loadThreadIDs() throws -> Set<String>? {
         let stateData = try Data(contentsOf: globalStateURL)
         let authData = try Data(contentsOf: authURL)
         guard let unreadIDs = try Self.unreadThreadIDs(stateData: stateData, authData: authData),
@@ -49,7 +53,7 @@ public final class CodexUnreadStateReader {
                   and coalesce(thread_source, '') not in ('chatgpt_hidden', 'ambient_suggestions');
                 """
         )
-        return unreadIDs.intersection(threads.map(\.id)).count
+        return unreadIDs.intersection(threads.map(\.id))
     }
 
     static func unreadThreadIDs(stateData: Data, authData: Data) throws -> Set<String>? {

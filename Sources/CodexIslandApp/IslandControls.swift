@@ -1,4 +1,20 @@
+import CodexIslandCore
 import SwiftUI
+
+struct IslandUnreadBadge: View {
+    let language: InterfaceLanguage
+
+    var body: some View {
+        Text(language.text("Unread", "未读"))
+            .font(IslandTypography.control)
+            .foregroundStyle(IslandPalette.unread)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(IslandPalette.unreadSurface, in: Capsule())
+            .fixedSize()
+            .accessibilityLabel(language.text("Unread conversation", "未读会话"))
+    }
+}
 
 struct IslandButtonStyle: ButtonStyle {
     var isSelected = false

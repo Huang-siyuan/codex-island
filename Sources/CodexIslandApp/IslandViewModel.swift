@@ -58,7 +58,8 @@ final class IslandViewModel: ObservableObject {
     @Published var latestToolSummary: String?
     @Published var sourceLabel: String = "AI Tools"
     @Published var activeSessionCount: Int = 0
-    @Published var unreadCodexThreadCount: Int?
+    @Published var unreadCodexThreadIDs: Set<String>?
+    var unreadCodexThreadCount: Int? { unreadCodexThreadIDs?.count }
     @Published var sessionPreviews: [SessionPreview] = []
     @Published var setupMessage: String?
     @Published var isSoundEnabled: Bool
@@ -122,6 +123,11 @@ final class IslandViewModel: ObservableObject {
                 ? "CLI helper installed and zsh updated"
                 : "CLI helper installed"
         }
+    }
+
+    func isUnread(_ preview: SessionPreview) -> Bool {
+        // Codex owns read state; other providers may reuse the same raw thread ID.
+        preview.provider == .codex && unreadCodexThreadIDs?.contains(preview.threadID) == true
     }
 
     func openSession(_ preview: SessionPreview) {
