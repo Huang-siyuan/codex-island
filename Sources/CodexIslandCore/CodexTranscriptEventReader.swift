@@ -17,6 +17,7 @@ final class CodexTranscriptEventReader {
 
         struct Payload: Decodable {
             let type: String
+            let role: String?
             let name: String?
             let call_id: String?
             let output: String?
@@ -194,6 +195,14 @@ final class CodexTranscriptEventReader {
         }
         if record.type == "response_item" {
             let payload = record.payload
+            // Desktop replies (including async question cards) are user messages,
+            // and may have no matching event_msg/user_message record.
+            if payload.type == "message", payload.role == "user" {
+                return .userReply(CodexLogEvent(
+                    threadID: threadID, kind: .responseInProgress, toolName: nil,
+                    summary: "Working", timestamp: timestamp
+                ))
+            }
             if payload.type == "function_call", let name = payload.name,
                let id = payload.call_id,
                ["request_user_input", "functions.request_user_input",
