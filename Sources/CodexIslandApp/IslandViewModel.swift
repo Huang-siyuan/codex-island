@@ -52,6 +52,7 @@ enum UsageDashboardMetric: String, CaseIterable, Identifiable {
 
 @MainActor
 final class IslandViewModel: ObservableObject {
+    let launchAtLoginStore = LaunchAtLoginStore()
     @Published var threadTitle: String = "Watching AI tools"
     @Published var statusText: String = "Starting"
     @Published var latestToolSummary: String?
@@ -62,15 +63,8 @@ final class IslandViewModel: ObservableObject {
     @Published var setupMessage: String?
     @Published var isSoundEnabled: Bool
     @Published var customCompletionSoundName: String?
-    @Published var selectedExpandedTab: IslandExpandedTab = .sessions
-    @Published var usageMetric: UsageDashboardMetric = .tokens
     @Published var usageSnapshot: LocalUsageSnapshot?
     @Published var isUsageRefreshing = false
-    @Published var compactBarHeight: CGFloat = 32
-    @Published var compactBarWidth: CGFloat = IslandStatusPresentation.minimumCompactWidth
-    @Published var compactTopAttachmentOverlap: CGFloat = MenuBarGeometry.resolvedCompactTopAttachmentOverlap(
-        visibleHeight: 32
-    )
     var onUsageRequested: (() -> Void)?
     var onUsageRefreshRequested: (() -> Void)?
 
@@ -103,20 +97,6 @@ final class IslandViewModel: ObservableObject {
         if sessionPreviews != snapshot.sessionPreviews {
             sessionPreviews = snapshot.sessionPreviews
         }
-    }
-
-    func selectExpandedTab(_ tab: IslandExpandedTab) {
-        selectedExpandedTab = tab
-        if tab == .usage {
-            onUsageRequested?()
-        }
-    }
-
-    func refreshUsageIfSelected() {
-        guard selectedExpandedTab == .usage else {
-            return
-        }
-        onUsageRequested?()
     }
 
     func requestUsageRefresh() {
@@ -185,31 +165,4 @@ final class IslandViewModel: ObservableObject {
         soundPreferenceStore.clearCustomCompletionSound()
         customCompletionSoundName = nil
     }
-
-    @discardableResult
-    func updateCompactBarLayout(_ layout: MenuBarGeometry.CompactBarLayout) -> Bool {
-        let normalizedHeight = max(22, ceil(layout.height))
-        let normalizedWidth = max(IslandStatusPresentation.minimumCompactWidth, ceil(layout.width))
-        let normalizedTopAttachmentOverlap = max(0, ceil(layout.topAttachmentOverlap))
-
-        let heightChanged = abs(compactBarHeight - normalizedHeight) > 0.5
-        let widthChanged = abs(compactBarWidth - normalizedWidth) > 0.5
-        let topAttachmentChanged = abs(compactTopAttachmentOverlap - normalizedTopAttachmentOverlap) > 0.5
-
-        guard heightChanged || widthChanged || topAttachmentChanged else {
-            return false
-        }
-
-        if heightChanged {
-            compactBarHeight = normalizedHeight
-        }
-        if widthChanged {
-            compactBarWidth = normalizedWidth
-        }
-        if topAttachmentChanged {
-            compactTopAttachmentOverlap = normalizedTopAttachmentOverlap
-        }
-        return true
-    }
-
 }

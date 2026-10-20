@@ -100,3 +100,23 @@ struct IslandCheckboxStyle: ToggleStyle {
         }
     }
 }
+
+/// Native menu selection keeps keyboard navigation, checked items and accessibility values.
+struct IslandMenuPicker<Option: Hashable>: View {
+    let title: String
+    let options: [Option]
+    @Binding var selection: Option
+    let label: (Option) -> String
+
+    var body: some View {
+        Picker(title, selection: $selection) {
+            ForEach(options, id: \.self) { option in
+                Text(label(option)).tag(option)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .font(IslandTypography.control)
+        .frame(maxWidth: .infinity, minHeight: IslandLayout.controlHeight, alignment: .leading)
+    }
+}

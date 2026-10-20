@@ -5,6 +5,7 @@ import SwiftUI
 struct IslandSettingsView: View {
     @ObservedObject var viewModel: IslandViewModel
     @ObservedObject var launchAtLoginStore: LaunchAtLoginStore
+    @ObservedObject var displayPreferences: IslandDisplayPreferences
     @AppStorage("interfaceLanguage") private var interfaceLanguageRaw = InterfaceLanguage.english.rawValue
     @AppStorage("islandAppearance") private var islandAppearanceRaw = IslandAppearance.classic.rawValue
 
@@ -66,6 +67,19 @@ struct IslandSettingsView: View {
             }
 
             IslandSeparator()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(language.text("Display mode", "显示模式"))
+                    .foregroundStyle(IslandPalette.subtitle)
+                IslandMenuPicker(
+                    title: language.text("Display mode", "显示模式"),
+                    options: IslandDisplayMode.allCases,
+                    selection: $displayPreferences.mode
+                ) { mode in
+                    mode.title(language: language)
+                }
+                .accessibilityIdentifier("settings.displayMode")
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(language.text("Language", "语言"))

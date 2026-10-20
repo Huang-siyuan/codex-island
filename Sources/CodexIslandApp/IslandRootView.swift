@@ -3,6 +3,8 @@ import SwiftUI
 
 struct IslandRootView: View {
     @ObservedObject var viewModel: IslandViewModel
+    @ObservedObject var panelState: IslandPanelState
+    let displayPreferences: IslandDisplayPreferences
     var isPointerInsideWindow: () -> Bool = { false }
     var onMeasuredGeometryChange: (CGSize, CGFloat) -> Void = { _, _ in }
 
@@ -11,7 +13,6 @@ struct IslandRootView: View {
     private let detailRevealAnimation = Animation.spring(response: 0.24, dampingFraction: 0.88)
     private let detailHideAnimation = Animation.easeOut(duration: 0.18)
 
-    @StateObject private var launchAtLoginStore = LaunchAtLoginStore()
     @State private var isExpanded = false
     @State private var showsExpandedContent = false
     @State private var detailRevealTask: Task<Void, Never>?
@@ -75,7 +76,7 @@ struct IslandRootView: View {
         .onHover { hovering in
             handleHoverChange(hovering)
         }
-        .animation(shellExpandAnimation, value: viewModel.selectedExpandedTab)
+        .animation(shellExpandAnimation, value: panelState.selectedExpandedTab)
         .animation(shellExpandAnimation, value: interfaceLanguageRaw)
         .animation(.easeInOut(duration: 0.18), value: compactShellWidth)
         .animation(.easeInOut(duration: 0.22), value: islandAppearanceRaw)
@@ -169,13 +170,17 @@ struct IslandRootView: View {
     private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             Group {
-                switch viewModel.selectedExpandedTab {
+                switch panelState.selectedExpandedTab {
                 case .sessions:
                     sessionsContent
                 case .usage:
                     usageContent
                 case .settings:
-                    IslandSettingsView(viewModel: viewModel, launchAtLoginStore: launchAtLoginStore)
+                    IslandSettingsView(
+                        viewModel: viewModel,
+                        launchAtLoginStore: viewModel.launchAtLoginStore,
+                        displayPreferences: displayPreferences
+                    )
                 }
             }
         }
@@ -206,7 +211,7 @@ struct IslandRootView: View {
 
     private var usageContent: some View {
         UsageDashboardView(
-            metric: $viewModel.usageMetric,
+            metric: $panelState.usageMetric,
             snapshot: viewModel.usageSnapshot,
             language: language,
             appearance: appearance,
@@ -214,7 +219,7 @@ struct IslandRootView: View {
             onRefresh: viewModel.requestUsageRefresh
         )
         .onAppear {
-            viewModel.refreshUsageIfSelected()
+            refreshUsageIfSelected()
         }
     }
 
@@ -222,11 +227,11 @@ struct IslandRootView: View {
         HStack(spacing: 6) {
             ForEach([IslandExpandedTab.sessions, .usage]) { tab in
                 Button {
-                    guard viewModel.selectedExpandedTab != tab else {
+                    guard panelState.selectedExpandedTab != tab else {
                         return
                     }
                     withAnimation(shellExpandAnimation) {
-                        viewModel.selectExpandedTab(tab)
+                        panelState.selectedExpandedTab = tab
                     }
                 } label: {
                     HStack(spacing: 6) {
@@ -239,8 +244,8 @@ struct IslandRootView: View {
                     }
                     .fixedSize(horizontal: true, vertical: false)
                 }
-                .buttonStyle(IslandButtonStyle(isSelected: viewModel.selectedExpandedTab == tab))
-                .accessibilityAddTraits(viewModel.selectedExpandedTab == tab ? .isSelected : [])
+                .buttonStyle(IslandButtonStyle(isSelected: panelState.selectedExpandedTab == tab))
+                .accessibilityAddTraits(panelState.selectedExpandedTab == tab ? .isSelected : [])
             }
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -248,17 +253,17 @@ struct IslandRootView: View {
 
     private var settingsButton: some View {
         Button {
-            viewModel.selectExpandedTab(.settings)
+            panelState.selectedExpandedTab = .settings
         } label: {
             Image(systemName: "gearshape.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .frame(width: 12)
         }
-        .buttonStyle(IslandButtonStyle(isSelected: viewModel.selectedExpandedTab == .settings))
+        .buttonStyle(IslandButtonStyle(isSelected: panelState.selectedExpandedTab == .settings))
         .help(language.text("Settings", "设置"))
         .accessibilityLabel(language.text("Settings", "设置"))
         .accessibilityIdentifier("island.settings")
-        .accessibilityAddTraits(viewModel.selectedExpandedTab == .settings ? .isSelected : [])
+        .accessibilityAddTraits(panelState.selectedExpandedTab == .settings ? .isSelected : [])
     }
 
     private func sessionPreviewCard(_ preview: SessionPreview) -> some View {
@@ -381,11 +386,11 @@ struct IslandRootView: View {
     }
 
     private var compactVisibleHeight: CGFloat {
-        max(22, ceil(viewModel.compactBarHeight))
+        max(22, ceil(panelState.compactBarHeight))
     }
 
     private var compactTopAttachmentOverlap: CGFloat {
-        isExpanded ? 0 : max(0, ceil(viewModel.compactTopAttachmentOverlap))
+        isExpanded ? 0 : max(0, ceil(panelState.compactTopAttachmentOverlap))
     }
 
     private var compactShellHeight: CGFloat {
@@ -397,7 +402,7 @@ struct IslandRootView: View {
             IslandStatusPresentation.compactWidth(
                 statusText: viewModel.statusText, unreadCount: viewModel.unreadCodexThreadCount, language: language
             ),
-            ceil(viewModel.compactBarWidth)
+            ceil(panelState.compactBarWidth)
         )
     }
 
@@ -508,13 +513,19 @@ struct IslandRootView: View {
         }
     }
 
+    private func refreshUsageIfSelected() {
+        if panelState.selectedExpandedTab == .usage {
+            viewModel.onUsageRequested?()
+        }
+    }
+
     private func expandIsland() {
         if !isExpanded {
             withAnimation(shellExpandAnimation) {
                 isExpanded = true
             }
             // The selected tab survives collapse, so reopening Usage must request a fresh snapshot too.
-            viewModel.refreshUsageIfSelected()
+            refreshUsageIfSelected()
         }
 
         guard !showsExpandedContent, detailRevealTask == nil else {
