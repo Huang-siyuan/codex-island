@@ -65,6 +65,7 @@ func unreadCountExcludesInternalThreadsButPreservesOrdinaryConversationSources()
         "desktop", "cli", "exec", "app-server", "spawn", "review", "compact",
         "legacy-spawn", "hidden", "suggestion", "unknown",
     ])
+    #expect(fixture.reader().readThreadIDs() == ["desktop", "cli", "exec", "app-server"])
     #expect(fixture.reader().readCount() == 4)
 }
 
@@ -125,9 +126,20 @@ func pollingDeliversReadChangesEvenWithoutSessionEvents() async throws {
     try fixture.execute("insert into threads (id, archived) values ('one', 0)")
     try fixture.writeState(ids: ["one"])
     let engine = PollingEngine(unreadStateReader: fixture.reader(), providers: [])
-    #expect(await engine.pollOnce().unreadCodexThreadCount == 1)
+    let first = await engine.pollOnce()
+    #expect(first.unreadCodexThreadCount == 1)
+    #expect(first.unreadCodexThreadIDs == ["one"])
+    try fixture.execute("insert into threads (id, archived) values ('two', 0)")
+    try fixture.writeState(ids: ["two"])
+    let changed = await engine.pollOnce()
+    #expect(changed.unreadCodexThreadCount == 1)
+    #expect(changed.unreadCodexThreadIDs == ["two"])
     try fixture.writeState(ids: [])
-    #expect(await engine.pollOnce().unreadCodexThreadCount == 0)
+    let read = await engine.pollOnce()
+    #expect(read.unreadCodexThreadCount == 0)
+    #expect(read.unreadCodexThreadIDs == [])
+    try Data("invalid".utf8).write(to: fixture.globalURL, options: .atomic)
+    #expect(await engine.pollOnce().unreadCodexThreadIDs == nil)
 }
 
 private func unreadAuth(account: String = "test-account") throws -> Data {

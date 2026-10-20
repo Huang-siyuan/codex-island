@@ -286,7 +286,12 @@ struct IslandRootView: View {
                             Spacer(minLength: 8)
 
                             HStack(spacing: 8) {
-                                badge(text: preview.sourceLabel, color: IslandPalette.emphasizedSurface)
+                                if viewModel.isUnread(preview) {
+                                    IslandUnreadBadge(language: language)
+                                }
+                                if preview.provider != .codex {
+                                    badge(text: preview.sourceLabel, color: IslandPalette.emphasizedSurface)
+                                }
                                 badge(
                                     text: language.statusText(for: preview.statusText),
                                     color: statusColor(for: preview.statusText).opacity(0.2)
