@@ -276,6 +276,78 @@ func codexInputDoesNotNotifyHistoricalOrAlreadyAnsweredRequests() throws {
     #expect(try provider.poll().logEvents.map(\.kind) == [.responseInProgress])
 }
 
+@Test(arguments: [
+    "只实现后端链路，提供接入契约",
+    "<send_user_message_question_reply>\n[{\"answer\":\"只实现后端链路，提供接入契约\"}]\n</send_user_message_question_reply>"
+])
+func codexAsyncInputResumesOnUserResponseItem(reply: String) throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    try fixture.append(inputRecord(type: "function_call", second: 2, callID: "input", name: "request_user_input_async"))
+    try fixture.append(inputRecord(type: "function_call_output", second: 3, callID: "input", output: "{\"accepted\":true}"))
+    let provider = fixture.provider()
+    let coordinator = SessionCoordinator(now: { fixture.start.addingTimeInterval(6) })
+    let initial = try provider.poll()
+    coordinator.apply(threadSnapshots: initial.threadSnapshots)
+    coordinator.apply(logEvents: initial.logEvents)
+    #expect(coordinator.currentSnapshot.statusText == "Waiting for input")
+    coordinator.consumeUserInputNotification(for: try #require(coordinator.pendingUserInput))
+
+    try fixture.append(messageRecord(role: "user", second: 4, text: reply))
+    try fixture.append(inputRecord(type: "function_call", second: 5, callID: "build", name: "exec_command"))
+    let resumed = try provider.poll()
+    #expect(resumed.logEvents.map(\.kind) == [.responseInProgress])
+    coordinator.apply(logEvents: resumed.logEvents)
+    #expect(coordinator.currentSnapshot.statusText == "Running")
+    #expect(coordinator.pendingUserInput == nil)
+    #expect(coordinator.pendingCompletion == nil)
+    #expect(try provider.poll().logEvents.isEmpty)
+    // Reopening the transcript after a restart must also discard the answered request.
+    #expect(try fixture.provider().poll().logEvents.map(\.kind) == [.responseInProgress])
+
+    try fixture.append(inputRecord(type: "function_call", second: 7, callID: "next", name: "request_user_input_async"))
+    coordinator.apply(logEvents: try provider.poll().logEvents)
+    #expect(coordinator.currentSnapshot.statusText == "Waiting for input")
+    #expect(coordinator.pendingUserInput != nil)
+}
+
+@Test(arguments: ["assistant", "developer", "system"])
+func codexInputDoesNotTreatOtherMessageRolesAsUserReply(role: String) throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    try fixture.append(inputRecord(type: "function_call", second: 2, callID: "input", name: "request_user_input_async"))
+    try fixture.append(inputRecord(type: "function_call_output", second: 3, callID: "input", output: "{\"accepted\":true}"))
+    let provider = fixture.provider()
+    #expect(try provider.poll().logEvents.map(\.kind) == [.userInputRequested])
+    try fixture.append(messageRecord(role: role, second: 4, text: "<send_user_message_question_reply>answer</send_user_message_question_reply>"))
+    #expect(try provider.poll().logEvents.isEmpty)
+    #expect(try fixture.provider().poll().logEvents.map(\.kind) == [.userInputRequested])
+}
+
+private func messageRecord(role: String, second: Int, text: String) throws -> String {
+    struct Record: Encodable {
+        struct Payload: Encodable {
+            struct Content: Encodable {
+                let type = "input_text"
+                let text: String
+            }
+            let type = "message"
+            let role: String
+            let content: [Content]
+        }
+        let timestamp: String
+        let type = "response_item"
+        let payload: Payload
+    }
+    let record = Record(
+        timestamp: String(format: "2026-10-19T12:00:%02d.123Z", second),
+        payload: .init(role: role, content: [.init(text: text)])
+    )
+    return String(decoding: try JSONEncoder().encode(record), as: UTF8.self) + "\n"
+}
+
 @Test(arguments: ["task_complete", "turn_aborted", "task_started"])
 func codexInputClearedByTaskLifecycle(type: String) throws {
     let fixture = try CompletionFixture()
