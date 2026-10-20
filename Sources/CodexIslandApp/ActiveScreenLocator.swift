@@ -47,40 +47,52 @@ final class ActiveScreenLocator {
             return nil
         }
 
-        let candidates = visibleWindowCandidates().filter {
-            $0.ownerPID == processIdentifier
-        }
-
-        guard let window = candidates.max(by: { $0.area < $1.area }) else {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let windowInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]],
+              let bounds = Self.frontmostWindowBounds(for: processIdentifier, in: windowInfo) else {
             return nil
         }
-
-        return screen(for: window.bounds)
+        return screen(for: bounds)
     }
 
-    private func visibleWindowCandidates() -> [WindowCandidate] {
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let windowInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-            return []
-        }
-
-        return windowInfo.compactMap(WindowCandidate.init).filter {
+    static func frontmostWindowBounds(for processIdentifier: pid_t, in windowInfo: [[String: Any]]) -> CGRect? {
+        // optionOnScreenOnly 按前后顺序返回窗口；按面积排序会让另一屏的大窗口抢走焦点。
+        windowInfo.lazy.compactMap(WindowCandidate.init).first {
+            $0.ownerPID == processIdentifier &&
             $0.layer == 0 &&
             $0.alpha > 0.05 &&
             $0.bounds.width > 120 &&
             $0.bounds.height > 60
-        }
+        }?.bounds
     }
 
     private func screen(for bounds: CGRect) -> NSScreen? {
         let screenFrames = NSScreen.screens.map(ScreenFrame.init)
-        if let matchingScreen = screenFrames.first(where: { $0.quartzFrame.contains(bounds.center) }) {
-            return matchingScreen.screen
+        guard let index = Self.screenIndex(for: bounds, screenFrames: screenFrames.map(\.quartzFrame)) else {
+            return nil
         }
+        return screenFrames[index].screen
+    }
 
-        return screenFrames
-            .max(by: { $0.quartzFrame.intersectionArea(with: bounds) < $1.quartzFrame.intersectionArea(with: bounds) })?
-            .screen
+    nonisolated static func quartzFrame(for screenFrame: CGRect, primaryScreenFrame: CGRect) -> CGRect {
+        // Quartz 的原点在主屏左上角；上方副屏不能改变坐标转换基准。
+        CGRect(
+            x: screenFrame.minX,
+            y: primaryScreenFrame.maxY - screenFrame.maxY,
+            width: screenFrame.width,
+            height: screenFrame.height
+        )
+    }
+
+    static func screenIndex(for bounds: CGRect, screenFrames: [CGRect]) -> Int? {
+        if let index = screenFrames.firstIndex(where: { $0.contains(bounds.center) }) {
+            return index
+        }
+        return screenFrames.indices.filter {
+            screenFrames[$0].intersectionArea(with: bounds) > 0
+        }.max {
+            screenFrames[$0].intersectionArea(with: bounds) < screenFrames[$1].intersectionArea(with: bounds)
+        }
     }
 }
 
@@ -104,10 +116,6 @@ private struct WindowCandidate {
         self.alpha = alphaNumber.doubleValue
         self.bounds = bounds
     }
-
-    var area: CGFloat {
-        bounds.width * bounds.height
-    }
 }
 
 private struct ScreenFrame {
@@ -117,12 +125,9 @@ private struct ScreenFrame {
     init(screen: NSScreen) {
         self.screen = screen
 
-        let desktopMaxY = NSScreen.screens.map(\.frame.maxY).max() ?? screen.frame.maxY
-        quartzFrame = CGRect(
-            x: screen.frame.minX,
-            y: desktopMaxY - screen.frame.maxY,
-            width: screen.frame.width,
-            height: screen.frame.height
+        quartzFrame = ActiveScreenLocator.quartzFrame(
+            for: screen.frame,
+            primaryScreenFrame: NSScreen.screens.first?.frame ?? screen.frame
         )
     }
 }
@@ -133,6 +138,7 @@ private extension CGRect {
     }
 
     func intersectionArea(with other: CGRect) -> CGFloat {
-        intersection(other).width * intersection(other).height
+        let overlap = intersection(other)
+        return overlap.isNull ? 0 : overlap.width * overlap.height
     }
 }

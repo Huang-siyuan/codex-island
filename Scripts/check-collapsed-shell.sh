@@ -38,7 +38,7 @@ struct ScreenFrame {
 
     init(screen: NSScreen) {
         self.screen = screen
-        let desktopMaxY = NSScreen.screens.map(\.frame.maxY).max() ?? screen.frame.maxY
+        let desktopMaxY = NSScreen.screens.first?.frame.maxY ?? screen.frame.maxY
         quartzFrame = CGRect(
             x: screen.frame.minX,
             y: desktopMaxY - screen.frame.maxY,
@@ -85,7 +85,7 @@ guard let screen = screen(containing: islandWindow.bounds) else {
     exit(1)
 }
 
-let desktopMaxY = NSScreen.screens.map(\.frame.maxY).max() ?? screen.frame.maxY
+let desktopMaxY = NSScreen.screens.first?.frame.maxY ?? screen.frame.maxY
 let expectedMinY = floor(desktopMaxY - screen.frame.maxY)
 let heightTolerance: CGFloat = 2
 let defaultWidth: CGFloat = 109

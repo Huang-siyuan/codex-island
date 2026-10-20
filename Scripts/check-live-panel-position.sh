@@ -38,7 +38,7 @@ struct ScreenFrame {
 
     init(screen: NSScreen) {
         self.screen = screen
-        let desktopMaxY = NSScreen.screens.map(\.frame.maxY).max() ?? screen.frame.maxY
+        let desktopMaxY = NSScreen.screens.first?.frame.maxY ?? screen.frame.maxY
         quartzFrame = CGRect(
             x: screen.frame.minX,
             y: desktopMaxY - screen.frame.maxY,
@@ -75,7 +75,7 @@ func activeScreen() -> NSScreen? {
     if let frontmostApp = NSWorkspace.shared.frontmostApplication,
        frontmostApp.processIdentifier != islandPID {
         let frontmostWindows = candidates.filter { $0.ownerPID == frontmostApp.processIdentifier }
-        if let window = frontmostWindows.max(by: { $0.area < $1.area }) {
+        if let window = frontmostWindows.first {
             let screenFrames = NSScreen.screens.map(ScreenFrame.init)
             if let directMatch = screenFrames.first(where: { $0.quartzFrame.contains(window.bounds.center) }) {
                 return directMatch.screen
@@ -117,7 +117,7 @@ guard let screen = activeScreen() else {
     exit(1)
 }
 
-let desktopMaxY = NSScreen.screens.map(\.frame.maxY).max() ?? screen.frame.maxY
+let desktopMaxY = NSScreen.screens.first?.frame.maxY ?? screen.frame.maxY
 let menuBarThickness = max(
     screen.frame.maxY - screen.visibleFrame.maxY,
     screen.safeAreaInsets.top,
