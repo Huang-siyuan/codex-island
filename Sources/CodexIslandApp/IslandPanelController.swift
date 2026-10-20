@@ -6,8 +6,8 @@ import SwiftUI
 @MainActor
 final class IslandPanelController {
     private let logger = Logger(subsystem: "CodexIsland", category: "Panel")
-    private let screenLocator: ActiveScreenLocator
-    private let viewModel: IslandViewModel
+    private let screenTarget: IslandScreenTarget
+    private let panelState = IslandPanelState()
     private let topInset: CGFloat
     private let collapsedMinimumWidth: CGFloat
     private let minimumSize: CGSize
@@ -15,18 +15,24 @@ final class IslandPanelController {
     private let hostingView: TransparentHostingView<IslandRootView>
     private let topAttachmentState: TopAttachmentState
 
-    init(viewModel: IslandViewModel, screenLocator: ActiveScreenLocator) {
-        self.viewModel = viewModel
-        self.screenLocator = screenLocator
+    init(
+        viewModel: IslandViewModel,
+        screenLocator: ActiveScreenLocator,
+        displayPreferences: IslandDisplayPreferences,
+        displayID: CGDirectDisplayID? = nil
+    ) {
+        let screenTarget = IslandScreenTarget(screenLocator: screenLocator, displayID: displayID)
+        self.screenTarget = screenTarget
+        let panelState = self.panelState
         topInset = 0
         collapsedMinimumWidth = IslandStatusPresentation.minimumCompactWidth
         minimumSize = CGSize(width: collapsedMinimumWidth, height: 1)
         topAttachmentState = TopAttachmentState(
             value: MenuBarGeometry.resolvedCompactTopAttachmentOverlap(visibleHeight: 32)
         )
-        if let initialScreen = screenLocator.activeScreen() ?? NSScreen.main ?? NSScreen.screens.first {
+        if let initialScreen = screenTarget.screen ?? NSScreen.main ?? NSScreen.screens.first {
             let compactLayout = MenuBarGeometry.compactBarLayout(for: initialScreen, defaultWidth: collapsedMinimumWidth)
-            _ = viewModel.updateCompactBarLayout(compactLayout)
+            _ = panelState.updateCompactBarLayout(compactLayout)
             topAttachmentState.value = max(0, ceil(compactLayout.topAttachmentOverlap))
         }
 
@@ -37,6 +43,7 @@ final class IslandPanelController {
             backing: .buffered,
             defer: false
         )
+        panel.title = "Codex Island"
         panel.level = .statusBar
         panel.backgroundColor = .clear
         panel.isOpaque = false
@@ -53,23 +60,25 @@ final class IslandPanelController {
         let hostingView = TransparentHostingView(
             rootView: IslandRootView(
                 viewModel: viewModel,
+                panelState: panelState,
+                displayPreferences: displayPreferences,
                 isPointerInsideWindow: { [weak panel] in
                     guard let panel else {
                         return false
                     }
                     return NSMouseInRect(NSEvent.mouseLocation, panel.frame, false)
                 },
-                onMeasuredGeometryChange: { [weak panel, screenLocator] size, topAttachmentOverlap in
+                onMeasuredGeometryChange: { [weak panel, screenTarget] size, topAttachmentOverlap in
                     guard let panel else {
                         return
                     }
 
-                    let preferredScreen = screenLocator.activeScreen()
+                    let preferredScreen = screenTarget.screen
                     let compactLayout = preferredScreen.map {
                         MenuBarGeometry.compactBarLayout(for: $0, defaultWidth: measuredMinimumSize.width)
                     }
                     if let compactLayout {
-                        _ = viewModel.updateCompactBarLayout(compactLayout)
+                        _ = panelState.updateCompactBarLayout(compactLayout)
                     }
                     topAttachmentState.value = topAttachmentOverlap
 
@@ -92,15 +101,20 @@ final class IslandPanelController {
         applyFrame()
     }
 
-    func show() {
-        logger.debug("show before frame=\(NSStringFromRect(self.panel.frame))")
-        applyFrame()
-        panel.orderFrontRegardless()
-        logger.debug("show after frame=\(NSStringFromRect(self.panel.frame))")
+    var displayID: CGDirectDisplayID? {
+        get { screenTarget.displayID }
+        set { screenTarget.displayID = newValue }
+    }
+
+    var currentScreenID: CGDirectDisplayID? { panel.screen?.islandDisplayID }
+    var isKeyWindow: Bool { panel.isKeyWindow }
+
+    func close() {
+        panel.close()
     }
 
     func refreshPositionIfScreenChanged() {
-        guard let preferredScreen = screenLocator.activeScreen(),
+        guard let preferredScreen = screenTarget.screen,
               preferredScreen.frame != panel.screen?.frame else {
             return
         }
@@ -116,13 +130,13 @@ final class IslandPanelController {
     }
 
     private func applyFrame() {
-        let preferredScreen = screenLocator.activeScreen() ?? panel.screen ?? NSScreen.main ?? NSScreen.screens.first
+        let preferredScreen = screenTarget.screen ?? panel.screen ?? NSScreen.main ?? NSScreen.screens.first
         guard let preferredScreen else {
             logger.debug("applyFrame no screen, keeping frame=\(NSStringFromRect(self.panel.frame))")
             return
         }
         let compactLayout = MenuBarGeometry.compactBarLayout(for: preferredScreen, defaultWidth: collapsedMinimumWidth)
-        if viewModel.updateCompactBarLayout(compactLayout) {
+        if panelState.updateCompactBarLayout(compactLayout) {
             hostingView.layoutSubtreeIfNeeded()
         }
         logger.debug("applyFrame screen=\(NSStringFromRect(preferredScreen.frame)) visible=\(NSStringFromRect(preferredScreen.visibleFrame))")

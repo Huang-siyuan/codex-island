@@ -16,7 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         focusRouter: focusRouter,
         soundPreferenceStore: soundPreferenceStore
     )
-    private var panelController: IslandPanelController?
+    private let displayPreferences = IslandDisplayPreferences()
+    private lazy var panelCoordinator = IslandPanelCoordinator(
+        viewModel: viewModel,
+        screenLocator: screenLocator,
+        preferences: displayPreferences
+    )
     private var pollingTask: Task<Void, Never>?
     private var positionTrackingTask: Task<Void, Never>?
     private var usageSnapshotTask: Task<Void, Never>?
@@ -26,7 +31,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         screenLocator.noteActivatedApplication(NSWorkspace.shared.frontmostApplication)
-        panelController = IslandPanelController(viewModel: viewModel, screenLocator: screenLocator)
         viewModel.onUsageRequested = { [weak self] in
             self?.loadUsageSnapshotIfNeeded()
         }
@@ -40,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             loadUsageSnapshotIfNeeded()
         }
-        panelController?.show()
+        panelCoordinator.reconcilePanels()
         installPositionObservers()
         scheduleLaunchReposition()
 
@@ -56,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        panelCoordinator.close()
         pollingTask?.cancel()
         usageSnapshotTask?.cancel()
         positionTrackingTask?.cancel()
@@ -132,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 if NSScreen.screens.count > 1 {
-                    panelController?.refreshPositionIfScreenChanged()
+                    panelCoordinator.refreshFocusedPositionIfNeeded()
                 }
             }
         }
@@ -144,7 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.screenLocator.noteActivatedApplication(NSWorkspace.shared.frontmostApplication)
-                self?.panelController?.refreshPosition()
+                self?.panelCoordinator.reconcilePanels()
             }
         }
 
@@ -154,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.panelController?.refreshPosition()
+                self?.panelCoordinator.reconcilePanels()
             }
         }
     }
@@ -162,7 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleLaunchReposition() {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
-            self?.panelController?.show()
+            self?.panelCoordinator.reconcilePanels()
         }
     }
 }
