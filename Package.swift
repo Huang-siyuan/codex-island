@@ -36,6 +36,7 @@ let package = Package(
             name: "CodexIslandAppTests",
             dependencies: [
                 "CodexIslandCore",
+                "CodexIslandApp",
                 .product(name: "Testing", package: "swift-testing"),
             ],
             path: "Tests/CodexIslandAppTests"

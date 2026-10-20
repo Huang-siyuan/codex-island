@@ -99,6 +99,14 @@ final class IslandPanelController {
         logger.debug("show after frame=\(NSStringFromRect(self.panel.frame))")
     }
 
+    func refreshPositionIfScreenChanged() {
+        guard let preferredScreen = screenLocator.activeScreen(),
+              preferredScreen.frame != panel.screen?.frame else {
+            return
+        }
+        refreshPosition()
+    }
+
     func refreshPosition() {
         logger.debug("refreshPosition before frame=\(NSStringFromRect(self.panel.frame))")
         hostingView.layoutSubtreeIfNeeded()

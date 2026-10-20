@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private var panelController: IslandPanelController?
     private var pollingTask: Task<Void, Never>?
+    private var positionTrackingTask: Task<Void, Never>?
     private var usageSnapshotTask: Task<Void, Never>?
     private var workspaceActivationObserver: NSObjectProtocol?
     private var screenParametersObserver: NSObjectProtocol?
@@ -57,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         pollingTask?.cancel()
         usageSnapshotTask?.cancel()
+        positionTrackingTask?.cancel()
         if let workspaceActivationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(workspaceActivationObserver)
         }
@@ -117,6 +119,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installPositionObservers() {
+        // 同一应用切换窗口不会发出应用激活通知；独立检测，避免被会话读取拖慢。
+        // 仅多屏时读取窗口列表，屏幕不变时不重新布局或置前，也不需要辅助功能授权。
+        positionTrackingTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .milliseconds(300))
+                } catch {
+                    return
+                }
+                guard let self else {
+                    return
+                }
+                if NSScreen.screens.count > 1 {
+                    panelController?.refreshPositionIfScreenChanged()
+                }
+            }
+        }
+
         workspaceActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
