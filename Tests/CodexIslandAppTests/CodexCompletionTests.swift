@@ -156,6 +156,106 @@ private func lifecycleLine(_ type: String, second: Int) -> String {
     return "{\"timestamp\":\"2026-10-19T12:00:\(seconds).123Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"\(type)\"}}\n"
 }
 
+private func completionLine(message: String, second: Int) throws -> String {
+    struct Record: Encodable {
+        struct Payload: Encodable {
+            let type = "task_complete"
+            let last_agent_message: String
+        }
+        let timestamp: String
+        let type = "event_msg"
+        let payload: Payload
+    }
+    let record = Record(
+        timestamp: String(format: "2026-10-19T12:00:%02d.123Z", second),
+        payload: .init(last_agent_message: message)
+    )
+    return String(decoding: try JSONEncoder().encode(record), as: UTF8.self) + "\n"
+}
+
+@Test(arguments: [false, true])
+func codexSilentHeartbeatCompletesWithoutNotificationOnInitialAndIncrementalRead(incremental: Bool) throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    let coordinator = SessionCoordinator(now: { fixture.start.addingTimeInterval(30) })
+    let provider = fixture.provider()
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    if incremental {
+        let started = try provider.poll()
+        coordinator.apply(threadSnapshots: started.threadSnapshots)
+        coordinator.apply(logEvents: started.logEvents)
+    }
+    let result = """
+    <heartbeat>
+      <automation_id>codex-monitor-pr-issue</automation_id>
+      <decision>DONT_NOTIFY</decision>
+      <message>PR 和 Issue 状态未变；继续监控。</message>
+    </heartbeat>
+    """
+    let record = try completionLine(message: result, second: 10)
+    // A partial terminal record must not change status or lose the silence decision.
+    if incremental {
+        try fixture.append(String(record.dropLast()))
+        #expect(try provider.poll().logEvents.isEmpty)
+        try fixture.append("\n")
+    } else {
+        try fixture.append(record)
+    }
+    let completed = try provider.poll()
+    coordinator.apply(threadSnapshots: completed.threadSnapshots)
+    coordinator.apply(logEvents: completed.logEvents)
+    #expect(completed.logEvents.map(\.kind) == [.taskCompleted])
+    #expect(coordinator.currentSnapshot.statusText == "Done")
+    #expect(!coordinator.currentSnapshot.shouldNotifyCompletion)
+    #expect(coordinator.pendingCompletion == nil)
+    coordinator.apply(logEvents: try provider.poll().logEvents)
+    #expect(coordinator.pendingCompletion == nil)
+
+    // Silence belongs to one completion, not to the thread's future turns.
+    try fixture.append(lifecycleLine("task_started", second: 20) + lifecycleLine("task_complete", second: 21))
+    coordinator.apply(logEvents: try provider.poll().logEvents)
+    #expect(coordinator.pendingCompletion?.threadID == "thread-1")
+}
+
+@Test
+func codexSilentHeartbeatDoesNotProducePollingNotification() async throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    try fixture.append(completionLine(
+        message: "<heartbeat><automation_id>monitor</automation_id><decision>DONT_NOTIFY</decision><message>无变化</message></heartbeat>",
+        second: 10
+    ))
+    let engine = PollingEngine(
+        coordinator: SessionCoordinator(now: { fixture.start.addingTimeInterval(30) }),
+        providers: [fixture.provider()]
+    )
+    let result = await engine.pollOnce()
+    #expect(result.snapshot.statusText == "Done")
+    #expect(result.completionNotification == nil)
+    #expect(await engine.pollOnce().completionNotification == nil)
+}
+
+@Test(arguments: [
+    "普通任务完成，文中提到 DONT_NOTIFY 不应静音。",
+    "<heartbeat><automation_id>monitor</automation_id><decision>NOTIFY</decision><message>检查失败，需要处理。</message></heartbeat>",
+    "示例：<heartbeat><automation_id>monitor</automation_id><decision>DONT_NOTIFY</decision></heartbeat>",
+    "<heartbeat><decision>DONT_NOTIFY</decision></heartbeat>",
+    "<heartbeat><automation_id>monitor</automation_id><decision>DONT_NOTIFY</decision><decision>NOTIFY</decision></heartbeat>",
+    "<heartbeat><automation_id>monitor</automation_id><message>DONT_NOTIFY</message></heartbeat>",
+])
+func codexCompletionStillNotifiesWithoutExplicitSilentHeartbeat(message: String) async throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    try fixture.append(completionLine(message: message, second: 10))
+    let engine = PollingEngine(
+        coordinator: SessionCoordinator(now: { fixture.start.addingTimeInterval(30) }),
+        providers: [fixture.provider()]
+    )
+    let result = await engine.pollOnce()
+    #expect(result.snapshot.statusText == "Done")
+    #expect(result.completionNotification?.threadID == "thread-1")
+}
+
 private struct CompletionFixture {
     let root: URL
     let state: URL

@@ -315,6 +315,7 @@ public final class SessionCoordinator {
     private func shouldNotifyCompletion(for sessionKey: String?) -> Bool {
         guard let sessionKey,
               let completionCandidate = completionCandidates[sessionKey],
+              latestLogEvents[sessionKey]?.shouldNotifyCompletion != false,
               isCompletionConfirmed(for: sessionKey) else {
             return false
         }
