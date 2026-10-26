@@ -21,6 +21,7 @@ final class CodexTranscriptEventReader {
             let name: String?
             let call_id: String?
             let output: String?
+            let last_agent_message: String?
         }
     }
 
@@ -248,7 +249,27 @@ final class CodexTranscriptEventReader {
             return nil
         }
         return .lifecycle(CodexLogEvent(
-            threadID: threadID, kind: kind, toolName: nil, summary: summary, timestamp: timestamp
+            threadID: threadID, kind: kind, toolName: nil, summary: summary, timestamp: timestamp,
+            shouldNotifyCompletion: kind != .taskCompleted || !isSilentHeartbeatResult(record.payload.last_agent_message)
         ))
+    }
+
+    private func isSilentHeartbeatResult(_ message: String?) -> Bool {
+        // Inspect the terminal result, not incidental mentions in tool output or prose.
+        // Completion remains a lifecycle boundary even when the heartbeat requests silence.
+        guard let message = message?.trimmingCharacters(in: .whitespacesAndNewlines),
+              message.hasPrefix("<heartbeat>"), message.hasSuffix("</heartbeat>"),
+              let document = try? XMLDocument(xmlString: message, options: [.nodeLoadExternalEntitiesNever]),
+              let root = document.rootElement(), root.name == "heartbeat" else {
+            return false
+        }
+        let identifiers = root.elements(forName: "automation_id")
+        let decisions = root.elements(forName: "decision")
+        guard identifiers.count == 1, decisions.count == 1,
+              let identifier = identifiers.first?.stringValue,
+              !identifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        return decisions.first?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) == "DONT_NOTIFY"
     }
 }

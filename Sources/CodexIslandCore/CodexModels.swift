@@ -127,6 +127,7 @@ public struct CodexLogEvent: Sendable, Equatable {
     public let toolName: String?
     public let summary: String
     public let timestamp: Date
+    public let shouldNotifyCompletion: Bool
 
     public init(
         provider: ProviderKind = .codex,
@@ -134,7 +135,8 @@ public struct CodexLogEvent: Sendable, Equatable {
         kind: CodexLogEventKind,
         toolName: String?,
         summary: String,
-        timestamp: Date
+        timestamp: Date,
+        shouldNotifyCompletion: Bool = true
     ) {
         self.provider = provider
         self.threadID = threadID
@@ -142,6 +144,7 @@ public struct CodexLogEvent: Sendable, Equatable {
         self.toolName = toolName
         self.summary = summary
         self.timestamp = timestamp
+        self.shouldNotifyCompletion = shouldNotifyCompletion
     }
 
     public var sessionKey: String {
