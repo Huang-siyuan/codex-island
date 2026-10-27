@@ -347,7 +347,7 @@ struct IslandRootView: View {
     }
 
     private var sessionCountText: String {
-        let count = "\(viewModel.sessionPreviews.count)/\(max(viewModel.activeSessionCount, viewModel.sessionPreviews.count))"
+        let count = viewModel.sessionPreviews.count
         return language.text("\(count) sessions", "\(count) 个会话")
     }
 
