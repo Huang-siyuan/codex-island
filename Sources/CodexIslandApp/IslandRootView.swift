@@ -159,10 +159,6 @@ struct IslandRootView: View {
             HStack(spacing: 8) {
                 expandedTabPicker
                 settingsButton
-
-                Text(sessionCountText)
-                    .font(IslandTypography.caption)
-                    .foregroundStyle(IslandPalette.subtitle)
             }
         }
     }
@@ -344,11 +340,6 @@ struct IslandRootView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(color, in: Capsule())
-    }
-
-    private var sessionCountText: String {
-        let count = viewModel.sessionPreviews.count
-        return language.text("\(count) sessions", "\(count) 个会话")
     }
 
     private var statusColor: Color {
