@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let firstLaunchSetup = FirstLaunchSetup()
     private let pollingEngine = PollingEngine()
     private let desktopClient = CodexDesktopClient()
+    private let focusTitleIndex = CodexFocusTitleIndex()
     private let usageSnapshotLoader = UsageSnapshotLoader()
     private let screenLocator = ActiveScreenLocator()
     private let soundPreferenceStore = SoundPreferenceStore()
@@ -104,21 +105,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if let request = result.userInputNotification {
-                notificationManager.notifyUserInputRequested()
+                if !(await shouldSilence(provider: .codex, threadID: request.threadID)) {
+                    notificationManager.notifyUserInputRequested()
+                }
                 await pollingEngine.consumeUserInputNotification(for: request)
             }
 
             if let completion = result.completionNotification {
-                notificationManager.notifyCompletion(
-                    provider: completion.provider,
-                    threadID: completion.threadID,
-                    threadTitle: completion.threadTitle
-                )
+                if !(await shouldSilence(provider: completion.provider, threadID: completion.threadID)) {
+                    notificationManager.notifyCompletion(
+                        provider: completion.provider,
+                        threadID: completion.threadID,
+                        threadTitle: completion.threadTitle
+                    )
+                }
                 await pollingEngine.consumeCompletionNotification(for: completion.provider, threadID: completion.threadID)
             }
 
             try? await Task.sleep(for: .seconds(1))
         }
+    }
+
+    private func shouldSilence(provider: ProviderKind, threadID: String) async -> Bool {
+        guard UserDefaults.standard.object(forKey: "smartSilenceEnabled") as? Bool ?? true,
+              provider == .codex, let focused = CodexFocusedWindowReader.read() else { return false }
+        let titles = await focusTitleIndex.titles()
+        // Recheck after the asynchronous index read: the user may have switched windows meanwhile.
+        guard focused == CodexFocusedWindowReader.read() else { return false }
+        return SmartSilencePolicy.shouldSilence(provider: provider, threadID: threadID, focused: focused, titles: titles)
     }
 
     private func refreshQuota() {

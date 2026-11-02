@@ -9,6 +9,8 @@ struct IslandSettingsView: View {
     @AppStorage("interfaceLanguage") private var interfaceLanguageRaw = InterfaceLanguage.english.rawValue
     @AppStorage("islandAppearance") private var islandAppearanceRaw = IslandAppearance.classic.rawValue
 
+    @AppStorage("smartSilenceEnabled") private var smartSilenceEnabled = true
+    @State private var hasAccessibilityPermission = CodexFocusedWindowReader.hasAccessibilityPermission
     @AppStorage("quotaAlertsEnabled") private var quotaAlertsEnabled = true
     @AppStorage("quotaWarningPercent") private var quotaWarningPercent = 80.0
 
@@ -30,9 +32,11 @@ struct IslandSettingsView: View {
         .foregroundStyle(IslandPalette.title)
         .onAppear {
             launchAtLoginStore.refresh()
+            hasAccessibilityPermission = CodexFocusedWindowReader.hasAccessibilityPermission
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             launchAtLoginStore.refresh()
+            hasAccessibilityPermission = CodexFocusedWindowReader.hasAccessibilityPermission
         }
     }
 
@@ -113,7 +117,7 @@ struct IslandSettingsView: View {
     }
 
     private var soundSettings: some View {
-        settingsSection(language.text("Notification sound", "提示音")) {
+        settingsSection(language.text("Notifications", "通知")) {
             Toggle(language.text("Play notification sound", "播放提示音"), isOn: Binding(
                 get: { viewModel.isSoundEnabled },
                 set: { viewModel.setSoundEnabled($0) }
@@ -122,6 +126,19 @@ struct IslandSettingsView: View {
             .accessibilityIdentifier("settings.completionSound")
             .help(language.text("Play when a task finishes or Codex requests input", "任务完成或 Codex 等待输入时播放"))
 
+            IslandSeparator()
+            Toggle(language.text("Silence the conversation I am viewing", "正在查看的会话自动静默"), isOn: $smartSilenceEnabled)
+                .toggleStyle(IslandCheckboxStyle())
+                .accessibilityIdentifier("settings.smartSilence")
+            Text(language.text("Only the focused Codex conversation is silenced; other conversations still notify.", "仅静默当前聚焦的 Codex 会话，其他会话照常提醒。"))
+                .font(IslandTypography.caption).foregroundStyle(IslandPalette.muted)
+            if smartSilenceEnabled && !hasAccessibilityPermission {
+                Text(language.text("Accessibility access is needed to identify the focused conversation. Notifications remain enabled until then.", "需辅助功能权限识别当前会话；授权前照常提醒。"))
+                    .font(IslandTypography.caption).foregroundStyle(IslandPalette.subtitle)
+                Button(language.text("Open Accessibility Settings", "打开辅助功能设置")) {
+                    CodexFocusedWindowReader.openAccessibilitySettings()
+                }
+            }
             IslandSeparator()
             Toggle(language.text("Quota alerts", "订阅额度预警"), isOn: $quotaAlertsEnabled)
                 .toggleStyle(IslandCheckboxStyle())
