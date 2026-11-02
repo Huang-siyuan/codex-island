@@ -9,6 +9,9 @@ struct IslandSettingsView: View {
     @AppStorage("interfaceLanguage") private var interfaceLanguageRaw = InterfaceLanguage.english.rawValue
     @AppStorage("islandAppearance") private var islandAppearanceRaw = IslandAppearance.classic.rawValue
 
+    @AppStorage("quotaAlertsEnabled") private var quotaAlertsEnabled = true
+    @AppStorage("quotaWarningPercent") private var quotaWarningPercent = 80.0
+
     private var language: InterfaceLanguage {
         InterfaceLanguage(rawValue: interfaceLanguageRaw) ?? .english
     }
@@ -118,6 +121,16 @@ struct IslandSettingsView: View {
             .toggleStyle(IslandCheckboxStyle())
             .accessibilityIdentifier("settings.completionSound")
             .help(language.text("Play when a task finishes or Codex requests input", "任务完成或 Codex 等待输入时播放"))
+
+            IslandSeparator()
+            Toggle(language.text("Quota alerts", "订阅额度预警"), isOn: $quotaAlertsEnabled)
+                .toggleStyle(IslandCheckboxStyle())
+                .accessibilityIdentifier("settings.quotaAlerts")
+            Stepper(value: $quotaWarningPercent, in: 50...95, step: 5) {
+                Text(language.text("Warn at \(Int(quotaWarningPercent))% used", "使用至 \(Int(quotaWarningPercent))% 时预警"))
+            }
+            .disabled(!quotaAlertsEnabled)
+            .accessibilityIdentifier("settings.quotaThreshold")
 
             IslandSeparator()
 

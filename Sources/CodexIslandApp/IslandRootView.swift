@@ -206,7 +206,9 @@ struct IslandRootView: View {
     }
 
     private var usageContent: some View {
-        UsageDashboardView(
+        VStack(alignment: .leading, spacing: IslandLayout.sectionSpacing) {
+            SubscriptionQuotaView(viewModel: viewModel, language: language)
+            UsageDashboardView(
             metric: $panelState.usageMetric,
             snapshot: viewModel.usageSnapshot,
             language: language,
@@ -214,6 +216,7 @@ struct IslandRootView: View {
             isRefreshing: viewModel.isUsageRefreshing,
             onRefresh: viewModel.requestUsageRefresh
         )
+        }
         .onAppear {
             refreshUsageIfSelected()
         }

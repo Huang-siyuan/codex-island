@@ -66,6 +66,12 @@ final class IslandViewModel: ObservableObject {
     @Published var customCompletionSoundName: String?
     @Published var usageSnapshot: LocalUsageSnapshot?
     @Published var isUsageRefreshing = false
+    @Published var subscriptionQuota: SubscriptionQuotaResponse?
+    @Published var isQuotaRefreshing = false
+    @Published var quotaRefreshFailed = false
+    @Published var quotaRefreshedAt: Date?
+    @Published var quotaAlertText: String?
+    var onQuotaRefreshRequested: (() -> Void)?
     var onUsageRequested: (() -> Void)?
     var onUsageRefreshRequested: (() -> Void)?
 
