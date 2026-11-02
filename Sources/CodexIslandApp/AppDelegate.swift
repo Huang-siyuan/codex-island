@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let focusRouter = FocusRouter()
     private let firstLaunchSetup = FirstLaunchSetup()
     private let pollingEngine = PollingEngine()
+    private let desktopClient = CodexDesktopClient()
     private let usageSnapshotLoader = UsageSnapshotLoader()
     private let screenLocator = ActiveScreenLocator()
     private let soundPreferenceStore = SoundPreferenceStore()
@@ -47,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             loadUsageSnapshotIfNeeded()
         }
+        viewModel.onQuestionAnswer = { [weak self] request, answers in
+            guard let self else { throw CodexLocalError.unavailable }
+            try await desktopClient.answer(request, answers: answers)
+        }
         viewModel.onQuotaRefreshRequested = { [weak self] in self?.refreshQuota() }
         quotaTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -71,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         panelCoordinator.close()
+        Task { await desktopClient.close() }
         pollingTask?.cancel()
         quotaTask?.cancel()
         quotaRefreshTask?.cancel()
@@ -88,6 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         while !Task.isCancelled {
             let result = await pollingEngine.pollOnce()
             viewModel.apply(snapshot: result.snapshot)
+            var codexIDs = Set(result.snapshot.sessionPreviews.filter { $0.provider == .codex }.map(\.threadID))
+            if let active = viewModel.pendingQuestions.first(where: { $0.id == viewModel.activeQuestionID || $0.id == viewModel.submittingQuestionID }) {
+                codexIDs.insert(active.threadID)
+            }
+            viewModel.applyQuestions(await desktopClient.refresh(threadIDs: codexIDs))
             if viewModel.unreadCodexThreadIDs != result.unreadCodexThreadIDs {
                 viewModel.unreadCodexThreadIDs = result.unreadCodexThreadIDs
             }
