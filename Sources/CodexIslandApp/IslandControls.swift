@@ -18,15 +18,17 @@ struct IslandUnreadBadge: View {
 
 struct IslandButtonStyle: ButtonStyle {
     var isSelected = false
+    var isMultiline = false
 
     func makeBody(configuration: Configuration) -> some View {
-        IslandButtonBody(configuration: configuration, isSelected: isSelected)
+        IslandButtonBody(configuration: configuration, isSelected: isSelected, isMultiline: isMultiline)
     }
 }
 
 private struct IslandButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let isSelected: Bool
+    let isMultiline: Bool
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
 
@@ -45,12 +47,14 @@ private struct IslandButtonBody: View {
             .font(IslandTypography.control)
             .foregroundStyle(isSelected || isHovered ? IslandPalette.title : IslandPalette.subtitle)
             .padding(.horizontal, 10)
+            .padding(.vertical, isMultiline ? 8 : 0)
             .frame(minHeight: IslandLayout.controlHeight)
-            .background(fill, in: Capsule())
+            .background(fill, in: RoundedRectangle(cornerRadius: isMultiline ? IslandLayout.cardRadius : IslandLayout.controlHeight / 2))
             .overlay {
-                Capsule().strokeBorder(isSelected ? IslandPalette.selectedBorder : IslandPalette.border, lineWidth: 1)
+                RoundedRectangle(cornerRadius: isMultiline ? IslandLayout.cardRadius : IslandLayout.controlHeight / 2)
+                    .strokeBorder(isSelected ? IslandPalette.selectedBorder : IslandPalette.border, lineWidth: 1)
             }
-            .contentShape(Capsule())
+            .contentShape(RoundedRectangle(cornerRadius: isMultiline ? IslandLayout.cardRadius : IslandLayout.controlHeight / 2))
             .opacity(isEnabled ? 1 : 0.45)
             .onHover { isHovered = $0 }
             .animation(.easeOut(duration: 0.12), value: isHovered)

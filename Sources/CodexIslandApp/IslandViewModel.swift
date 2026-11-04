@@ -66,6 +66,18 @@ final class IslandViewModel: ObservableObject {
     @Published var customCompletionSoundName: String?
     @Published var usageSnapshot: LocalUsageSnapshot?
     @Published var isUsageRefreshing = false
+    @Published var pendingQuestions: [CodexQuestionRequest] = []
+    @Published var activeQuestionID: String?
+    @Published var questionDrafts: [String: [String: String]] = [:]
+    @Published var submittingQuestionID: String?
+    @Published var questionErrorID: String?
+    var onQuestionAnswer: ((CodexQuestionRequest, [String: String]) async throws -> Void)?
+    @Published var subscriptionQuota: SubscriptionQuotaResponse?
+    @Published var isQuotaRefreshing = false
+    @Published var quotaRefreshFailed = false
+    @Published var quotaRefreshedAt: Date?
+    @Published var quotaAlertText: String?
+    var onQuotaRefreshRequested: (() -> Void)?
     var onUsageRequested: (() -> Void)?
     var onUsageRefreshRequested: (() -> Void)?
 
@@ -97,6 +109,38 @@ final class IslandViewModel: ObservableObject {
         }
         if sessionPreviews != snapshot.sessionPreviews {
             sessionPreviews = snapshot.sessionPreviews
+        }
+    }
+
+    func applyQuestions(_ requests: [CodexQuestionRequest]) {
+        if pendingQuestions != requests { pendingQuestions = requests }
+        let ids = Set(requests.map(\.id))
+        questionDrafts = questionDrafts.filter { ids.contains($0.key) }
+        if let activeQuestionID, !ids.contains(activeQuestionID), submittingQuestionID == nil {
+            self.activeQuestionID = nil
+        }
+    }
+
+    func setAnswer(_ answer: String, questionID: String, requestID: String) {
+        questionDrafts[requestID, default: [:]][questionID] = answer
+    }
+
+    func submitAnswer(_ request: CodexQuestionRequest) {
+        guard submittingQuestionID == nil, let onQuestionAnswer else { return }
+        let answers = questionDrafts[request.id] ?? [:]
+        guard request.validates(answers) else { return }
+        submittingQuestionID = request.id
+        questionErrorID = nil
+        Task {
+            defer { submittingQuestionID = nil }
+            do {
+                try await onQuestionAnswer(request, answers)
+                questionDrafts.removeValue(forKey: request.id)
+                activeQuestionID = nil
+                pendingQuestions.removeAll { $0.id == request.id }
+            } catch {
+                questionErrorID = request.id
+            }
         }
     }
 

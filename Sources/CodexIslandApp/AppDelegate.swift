@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let focusRouter = FocusRouter()
     private let firstLaunchSetup = FirstLaunchSetup()
     private let pollingEngine = PollingEngine()
+    private let desktopClient = CodexDesktopClient()
+    private let focusTitleIndex = CodexFocusTitleIndex()
     private let usageSnapshotLoader = UsageSnapshotLoader()
     private let screenLocator = ActiveScreenLocator()
     private let soundPreferenceStore = SoundPreferenceStore()
@@ -22,6 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         screenLocator: screenLocator,
         preferences: displayPreferences
     )
+    private var quotaTask: Task<Void, Never>?
+    private var quotaRefreshTask: Task<Void, Never>?
+    private var quotaAlerts = QuotaAlertTracker()
     private var pollingTask: Task<Void, Never>?
     private var positionTrackingTask: Task<Void, Never>?
     private var usageSnapshotTask: Task<Void, Never>?
@@ -44,6 +49,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             loadUsageSnapshotIfNeeded()
         }
+        viewModel.onQuestionAnswer = { [weak self] request, answers in
+            guard let self else { throw CodexLocalError.unavailable }
+            try await desktopClient.answer(request, answers: answers)
+        }
+        viewModel.onQuotaRefreshRequested = { [weak self] in self?.refreshQuota() }
+        quotaTask = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.refreshQuota()
+                do { try await Task.sleep(for: .seconds(60)) } catch { return }
+            }
+        }
         panelCoordinator.reconcilePanels()
         installPositionObservers()
         scheduleLaunchReposition()
@@ -61,7 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         panelCoordinator.close()
+        Task { await desktopClient.close() }
         pollingTask?.cancel()
+        quotaTask?.cancel()
+        quotaRefreshTask?.cancel()
         usageSnapshotTask?.cancel()
         positionTrackingTask?.cancel()
         if let workspaceActivationObserver {
@@ -76,25 +95,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         while !Task.isCancelled {
             let result = await pollingEngine.pollOnce()
             viewModel.apply(snapshot: result.snapshot)
+            var codexIDs = Set(result.snapshot.sessionPreviews.filter { $0.provider == .codex }.map(\.threadID))
+            if let active = viewModel.pendingQuestions.first(where: { $0.id == viewModel.activeQuestionID || $0.id == viewModel.submittingQuestionID }) {
+                codexIDs.insert(active.threadID)
+            }
+            viewModel.applyQuestions(await desktopClient.refresh(threadIDs: codexIDs))
             if viewModel.unreadCodexThreadIDs != result.unreadCodexThreadIDs {
                 viewModel.unreadCodexThreadIDs = result.unreadCodexThreadIDs
             }
 
             if let request = result.userInputNotification {
-                notificationManager.notifyUserInputRequested()
+                if !(await shouldSilence(provider: .codex, threadID: request.threadID)) {
+                    notificationManager.notifyUserInputRequested()
+                }
                 await pollingEngine.consumeUserInputNotification(for: request)
             }
 
             if let completion = result.completionNotification {
-                notificationManager.notifyCompletion(
-                    provider: completion.provider,
-                    threadID: completion.threadID,
-                    threadTitle: completion.threadTitle
-                )
+                if !(await shouldSilence(provider: completion.provider, threadID: completion.threadID)) {
+                    notificationManager.notifyCompletion(
+                        provider: completion.provider,
+                        threadID: completion.threadID,
+                        threadTitle: completion.threadTitle
+                    )
+                }
                 await pollingEngine.consumeCompletionNotification(for: completion.provider, threadID: completion.threadID)
             }
 
             try? await Task.sleep(for: .seconds(1))
+        }
+    }
+
+    private func shouldSilence(provider: ProviderKind, threadID: String) async -> Bool {
+        guard UserDefaults.standard.object(forKey: "smartSilenceEnabled") as? Bool ?? true,
+              provider == .codex, let focused = CodexFocusedWindowReader.read() else { return false }
+        let titles = await focusTitleIndex.titles()
+        // Recheck after the asynchronous index read: the user may have switched windows meanwhile.
+        guard focused == CodexFocusedWindowReader.read() else { return false }
+        return SmartSilencePolicy.shouldSilence(provider: provider, threadID: threadID, focused: focused, titles: titles)
+    }
+
+    private func refreshQuota() {
+        guard quotaRefreshTask == nil else { return }
+        viewModel.isQuotaRefreshing = true
+        quotaRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                viewModel.isQuotaRefreshing = false
+                quotaRefreshTask = nil
+            }
+            do {
+                guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") else {
+                    throw CodexLocalError.unavailable
+                }
+                let candidates = ["Contents/Resources/codex-cli/bin/codex", "Contents/Resources/codex"]
+                guard let executable = candidates.map({ app.appendingPathComponent($0) }).first(where: {
+                    FileManager.default.isExecutableFile(atPath: $0.path)
+                }) else { throw CodexLocalError.unavailable }
+                let response = try await SubscriptionQuotaReader.read(executable: executable)
+                guard !Task.isCancelled else { return }
+                viewModel.subscriptionQuota = response
+                viewModel.quotaRefreshedAt = Date()
+                viewModel.quotaRefreshFailed = false
+                let defaults = UserDefaults.standard
+                let threshold = defaults.object(forKey: "quotaWarningPercent") as? Double ?? 80
+                let alerts = quotaAlerts.update(response, threshold: threshold)
+                if defaults.object(forKey: "quotaAlertsEnabled") as? Bool ?? true, !alerts.isEmpty {
+                    let language = InterfaceLanguage(rawValue: defaults.string(forKey: "interfaceLanguage") ?? "") ?? .english
+                    viewModel.quotaAlertText = alerts.map { alert in
+                        switch alert.kind {
+                        case .warning: return language.text("\(alert.limit): subscription usage reached the warning threshold.", "\(alert.limit)：订阅用量达到预警阈值。")
+                        case .exhausted: return language.text("\(alert.limit): subscription quota exhausted.", "\(alert.limit)：订阅额度已用完。")
+                        case .reset: return language.text("\(alert.limit): subscription quota available again.", "\(alert.limit)：订阅额度已恢复。")
+                        }
+                    }.joined(separator: "\n")
+                    notificationManager.notifyUserInputRequested()
+                }
+            } catch {
+                viewModel.quotaRefreshFailed = true
+            }
         }
     }
 

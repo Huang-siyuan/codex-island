@@ -13,6 +13,7 @@ struct IslandRootView: View {
     private let detailRevealAnimation = Animation.spring(response: 0.24, dampingFraction: 0.88)
     private let detailHideAnimation = Animation.easeOut(duration: 0.18)
 
+    @State private var expandedContentHeight: CGFloat = 400
     @State private var isExpanded = false
     @State private var showsExpandedContent = false
     @State private var detailRevealTask: Task<Void, Never>?
@@ -89,6 +90,9 @@ struct IslandRootView: View {
         .onDisappear {
             detailRevealTask?.cancel()
         }
+        .onChange(of: panelState.selectedExpandedTab) { _, tab in
+            if tab != .sessions { viewModel.activeQuestionID = nil }
+        }
     }
 
     private var collapsedHeader: some View {
@@ -164,8 +168,8 @@ struct IslandRootView: View {
     }
 
     private var expandedContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Group {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
                 switch panelState.selectedExpandedTab {
                 case .sessions:
                     sessionsContent
@@ -179,7 +183,16 @@ struct IslandRootView: View {
                     )
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { expandedContentHeight = proxy.size.height }
+                        .onChange(of: proxy.size.height) { _, height in expandedContentHeight = height }
+                }
+            }
         }
+        .frame(height: min(expandedContentHeight, max(240, (NSScreen.screens.map { $0.visibleFrame.height }.min() ?? 800) - 160)))
     }
 
     private var sessionsContent: some View {
@@ -197,6 +210,19 @@ struct IslandRootView: View {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(viewModel.sessionPreviews) { preview in
                     sessionPreviewCard(preview)
+                    if preview.provider == .codex {
+                        ForEach(viewModel.pendingQuestions.filter { $0.threadID == preview.threadID }) { request in
+                            CodexQuestionView(viewModel: viewModel, request: request, language: language)
+                        }
+                    }
+                }
+                // Keep an open answer form available if a newer session displaces its preview.
+                ForEach(viewModel.pendingQuestions.filter { request in
+                    request.id == viewModel.activeQuestionID && !viewModel.sessionPreviews.contains {
+                        $0.provider == .codex && $0.threadID == request.threadID
+                    }
+                }) { request in
+                    CodexQuestionView(viewModel: viewModel, request: request, language: language)
                 }
                 if viewModel.sessionPreviews.isEmpty {
                     emptyState
@@ -206,14 +232,17 @@ struct IslandRootView: View {
     }
 
     private var usageContent: some View {
-        UsageDashboardView(
-            metric: $panelState.usageMetric,
-            snapshot: viewModel.usageSnapshot,
-            language: language,
-            appearance: appearance,
-            isRefreshing: viewModel.isUsageRefreshing,
-            onRefresh: viewModel.requestUsageRefresh
-        )
+        VStack(alignment: .leading, spacing: IslandLayout.sectionSpacing) {
+            SubscriptionQuotaView(viewModel: viewModel, language: language)
+            UsageDashboardView(
+                metric: $panelState.usageMetric,
+                snapshot: viewModel.usageSnapshot,
+                language: language,
+                appearance: appearance,
+                isRefreshing: viewModel.isUsageRefreshing,
+                onRefresh: viewModel.requestUsageRefresh
+            )
+        }
         .onAppear {
             refreshUsageIfSelected()
         }
@@ -552,6 +581,8 @@ struct IslandRootView: View {
     }
 
     private func collapseIsland() {
+        // Keep the keyboard form visible while answering, including when the pointer leaves the island.
+        guard viewModel.activeQuestionID == nil else { return }
         detailRevealTask?.cancel()
         detailRevealTask = nil
         withAnimation(shellCollapseAnimation) {

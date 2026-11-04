@@ -21,6 +21,7 @@ enum IslandPalette {
     static let unread = accent
     static let unreadSurface = unread.opacity(0.16)
     static let passive = Color.gray
+    static let quotaWarning = Color.orange
     static let error = Color.red
 
     static let classicBackground = LinearGradient(
