@@ -25,6 +25,21 @@ struct SubscriptionQuotaView: View {
                         .font(IslandTypography.caption).foregroundStyle(IslandPalette.subtitle)
                     if let window = limit.primary { quotaWindow(window) }
                     if let window = limit.secondary { quotaWindow(window) }
+                    HStack {
+                        Text(language.text("Credit balance", "点数余额"))
+                        Spacer()
+                        if limit.credits?.unlimited == true {
+                            Text(language.text("Unlimited", "无限额"))
+                        } else if let balance = limit.credits?.balanceAmount {
+                            Text(balance.formatted(.number.locale(language.locale).precision(.fractionLength(0...4))) + " credits")
+                                .monospacedDigit()
+                        } else {
+                            Text(language.text("Not reported", "未提供"))
+                                .foregroundStyle(IslandPalette.muted)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("quota.creditBalance")
                     if limit.primary == nil && limit.secondary == nil {
                         Text(language.text("No quota window reported", "账户未返回额度窗口"))
                     }

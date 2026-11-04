@@ -17,7 +17,7 @@ func renderSubscriptionQuestionAndSettingsInBothLanguagesAndAppearances() throws
         defaults.set(originalAppearance, forKey: "islandAppearance")
     }
     let viewModel = IslandViewModel(focusRouter: FocusRouter(), soundPreferenceStore: SoundPreferenceStore())
-    viewModel.subscriptionQuota = try JSONDecoder().decode(SubscriptionQuotaResponse.self, from: Data(#"{"rateLimits":{"limitId":"codex","planType":"pro","primary":{"usedPercent":83,"windowDurationMins":300,"resetsAt":1793885488},"secondary":{"usedPercent":53,"windowDurationMins":10080,"resetsAt":1793885488}}}"#.utf8))
+    viewModel.subscriptionQuota = try JSONDecoder().decode(SubscriptionQuotaResponse.self, from: Data(#"{"rateLimits":{"limitId":"codex","planType":"pro","credits":{"hasCredits":true,"unlimited":false,"balance":"61752.8573015000"},"primary":{"usedPercent":83,"windowDurationMins":300,"resetsAt":1793885488},"secondary":{"usedPercent":53,"windowDurationMins":10080,"resetsAt":1793885488}}}"#.utf8))
     viewModel.quotaRefreshedAt = Date()
     let questions = try JSONDecoder().decode([CodexQuestion].self, from: Data(#"[{"id":"scope","header":"Scope / 范围","question":"Which implementation should we use? 请选择实现方式。","isOther":true,"options":[{"label":"Recommended / 推荐方案","description":"Keep existing behavior and add the requested controls. 保留现有行为并添加所需控件。"},{"label":"Custom / 自定义","description":"Describe your preferred behavior. 描述你希望的行为。"}]}]"#.utf8))
     let request = CodexQuestionRequest(threadID: "preview", requestID: .number(1), ownerID: "preview", questions: questions)

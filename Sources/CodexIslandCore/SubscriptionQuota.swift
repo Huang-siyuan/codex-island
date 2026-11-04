@@ -10,11 +10,24 @@ public struct QuotaWindow: Codable, Equatable, Sendable {
 }
 
 public struct SubscriptionQuota: Codable, Equatable, Sendable {
+    public struct Credits: Codable, Equatable, Sendable {
+        public let hasCredits: Bool
+        public let unlimited: Bool
+        public let balance: String?
+
+        // Codex reports a decimal string in credits, not a currency amount.
+        public var balanceAmount: Decimal? {
+            guard let balance else { return nil }
+            return Decimal(string: balance, locale: Locale(identifier: "en_US_POSIX"))
+        }
+    }
+
     public let limitId: String?
     public let limitName: String?
     public let primary: QuotaWindow?
     public let secondary: QuotaWindow?
     public let planType: String?
+    public let credits: Credits?
 }
 
 public struct SubscriptionQuotaResponse: Decodable, Sendable {

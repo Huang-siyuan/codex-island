@@ -33,3 +33,20 @@ private func quota(_ percent: Double, reset: Int = 1000, account: String = "a") 
     let response = try JSONDecoder().decode(SubscriptionQuotaResponse.self, from: Data(#"{"rateLimits":{},"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":100},"secondary":{"usedPercent":85}}}}"#.utf8))
     #expect(tracker.update(response, threshold: 80).map(\.kind) == [.exhausted, .warning])
 }
+
+@Test func quotaPreservesCreditBalanceAndOptionalCreditStates() throws {
+    func decode(_ credits: String) throws -> SubscriptionQuota {
+        try JSONDecoder().decode(SubscriptionQuota.self, from: Data("{\"credits\":\(credits)}".utf8))
+    }
+    let paid = try decode(#"{"hasCredits":true,"unlimited":false,"balance":"61752.8573015000"}"#)
+    #expect(paid.credits?.balanceAmount == Decimal(string: "61752.8573015"))
+    let empty = try decode(#"{"hasCredits":false,"unlimited":false,"balance":"0"}"#)
+    #expect(empty.credits?.balanceAmount == 0)
+    let unlimited = try decode(#"{"hasCredits":true,"unlimited":true,"balance":null}"#)
+    #expect(unlimited.credits?.unlimited == true)
+    #expect(unlimited.credits?.balanceAmount == nil)
+    let missing = try decode("null")
+    #expect(missing.credits == nil)
+    let unreported = try decode(#"{"hasCredits":true,"unlimited":false}"#)
+    #expect(unreported.credits?.balanceAmount == nil)
+}
