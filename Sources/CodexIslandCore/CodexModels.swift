@@ -4,6 +4,7 @@ public enum ProviderKind: String, Sendable, Equatable, CaseIterable {
     case codex
     case claudeCode
     case codeBuddy
+    case deepSeek
 
     public var displayName: String {
         switch self {
@@ -11,6 +12,8 @@ public enum ProviderKind: String, Sendable, Equatable, CaseIterable {
             return "Codex"
         case .claudeCode:
             return "Claude Code"
+        case .deepSeek:
+            return "DeepSeek Harness"
         case .codeBuddy:
             return "CodeBuddy"
         }
@@ -18,6 +21,7 @@ public enum ProviderKind: String, Sendable, Equatable, CaseIterable {
 }
 
 public enum SessionNavigationTarget: Sendable, Equatable {
+    case deepSeek(sessionID: String)
     case codex(threadID: String)
     case claudeCode(sessionID: String, workingDirectory: String?)
     case codeBuddy(conversationID: String, workingDirectory: String?)
@@ -77,6 +81,8 @@ public struct ThreadSnapshot: Sendable, Equatable {
 
     public var navigationTarget: SessionNavigationTarget {
         switch provider {
+        case .deepSeek:
+            return .deepSeek(sessionID: threadID)
         case .codex:
             return .codex(threadID: threadID)
         case .claudeCode:
@@ -223,6 +229,8 @@ public struct SessionPreview: Sendable, Equatable, Identifiable {
         self.isPrimary = isPrimary
         self.navigationTarget = navigationTarget ?? {
             switch provider {
+            case .deepSeek:
+                return .deepSeek(sessionID: threadID)
             case .codex:
                 return .codex(threadID: threadID)
             case .claudeCode:

@@ -4,6 +4,7 @@ import Foundation
 public enum FocusTargetKind {
     case codex
     case codeBuddy
+    case deepSeek
     case idea
 }
 
@@ -24,6 +25,8 @@ public struct FocusRouter {
 
     public func target(for kind: FocusTargetKind) -> FocusTarget? {
         switch kind {
+        case .deepSeek:
+            return FocusTarget(bundleIdentifier: "com.deepseek.harness.desktop")
         case .codex:
             return FocusTarget(bundleIdentifier: "com.openai.codex")
         case .codeBuddy:
@@ -60,6 +63,8 @@ public struct FocusRouter {
     @discardableResult
     public func activateSession(_ navigationTarget: SessionNavigationTarget) -> Bool {
         switch navigationTarget {
+        case .deepSeek:
+            return activate(.deepSeek)
         case .codex(let threadID):
             guard let url = sessionURL(threadID: threadID) else {
                 return activate(.codex)

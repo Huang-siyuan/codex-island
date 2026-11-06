@@ -64,6 +64,9 @@ final class IslandViewModel: ObservableObject {
     @Published var setupMessage: String?
     @Published var isSoundEnabled: Bool
     @Published var customCompletionSoundName: String?
+    @Published var deepSeekUsage: [DeepSeekUsageSummary] = []
+    @Published var deepSeekConnected = false
+    @Published var deepSeekAccount: DeepSeekAccountSnapshot = .unavailable
     @Published var usageSnapshot: LocalUsageSnapshot?
     @Published var isUsageRefreshing = false
     @Published var pendingQuestions: [CodexQuestionRequest] = []

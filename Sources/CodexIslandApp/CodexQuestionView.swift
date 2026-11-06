@@ -20,26 +20,33 @@ struct CodexQuestionView: View {
                         Text(question.question).font(IslandTypography.body).textSelection(.enabled)
                         ForEach(question.options ?? []) { option in
                             Button {
-                                viewModel.setAnswer(option.label, questionID: question.id, requestID: request.id)
+                                select(option.label, question: question)
                             } label: {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(option.label).font(IslandTypography.control)
-                                    if !option.description.isEmpty {
-                                        Text(option.description).font(IslandTypography.caption).foregroundStyle(IslandPalette.subtitle)
+                                HStack(alignment: .top, spacing: 8) {
+                                    if question.multiSelect == true {
+                                        Image(systemName: isSelected(option.label, question: question) ? "checkmark.square.fill" : "square")
+                                            .foregroundStyle(isSelected(option.label, question: question) ? IslandPalette.accent : IslandPalette.subtitle)
+                                            .accessibilityHidden(true)
+                                    }
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(option.label).font(IslandTypography.control)
+                                        if !option.description.isEmpty {
+                                            Text(option.description).font(IslandTypography.caption).foregroundStyle(IslandPalette.subtitle)
+                                        }
                                     }
                                 }
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .buttonStyle(IslandButtonStyle(isSelected: viewModel.questionDrafts[request.id]?[question.id] == option.label, isMultiline: true))
-                            .accessibilityAddTraits(viewModel.questionDrafts[request.id]?[question.id] == option.label ? .isSelected : [])
+                            .buttonStyle(IslandButtonStyle(isSelected: isSelected(option.label, question: question), isMultiline: true))
+                            .accessibilityAddTraits(isSelected(option.label, question: question) ? .isSelected : [])
                         }
                         if (question.options ?? []).isEmpty || question.isOther != false {
                             if question.isSecret == true {
-                                SecureField(language.text("Your answer", "输入回答"), text: answer(question.id))
+                                SecureField(language.text("Your answer", "输入回答"), text: answer(question))
                                     .textFieldStyle(.roundedBorder)
                             } else {
-                                TextField(language.text("Your answer", "输入回答或补充说明"), text: answer(question.id), axis: .vertical)
+                                TextField(language.text("Your answer", "输入回答或补充说明"), text: answer(question), axis: .vertical)
                                     .lineLimit(1...5)
                                     .textFieldStyle(.roundedBorder)
                                     .accessibilityLabel(question.question)
@@ -48,7 +55,7 @@ struct CodexQuestionView: View {
                     }
                 }
                 if viewModel.questionErrorID == request.id {
-                    Text(language.text("Could not confirm the answer. Check this conversation in Codex before retrying.", "未能确认回答成功，请先在 Codex 查看该会话再重试。"))
+                    Text(language.text("Could not confirm the answer. Check this conversation in \(request.provider.displayName) before retrying.", "未能确认回答成功，请先在 \(request.provider.displayName) 查看该会话再重试。"))
                         .font(IslandTypography.caption).foregroundStyle(IslandPalette.error)
                 }
                 HStack {
@@ -68,9 +75,43 @@ struct CodexQuestionView: View {
         .modifier(IslandSurface(highlighted: true))
     }
 
-    private func answer(_ questionID: String) -> Binding<String> {
-        Binding(get: { viewModel.questionDrafts[request.id]?[questionID] ?? "" }, set: {
-            viewModel.setAnswer($0, questionID: questionID, requestID: request.id)
+    private func multiple(_ question: CodexQuestion) -> DeepSeekMultipleAnswer {
+        let raw = viewModel.questionDrafts[request.id]?[question.id] ?? ""
+        return (try? JSONDecoder().decode(DeepSeekMultipleAnswer.self, from: Data(raw.utf8))) ?? .init()
+    }
+
+    private func save(_ value: DeepSeekMultipleAnswer, question: CodexQuestion) {
+        guard let data = try? JSONEncoder().encode(value) else { return }
+        viewModel.setAnswer(String(decoding: data, as: UTF8.self), questionID: question.id, requestID: request.id)
+    }
+
+    private func isSelected(_ label: String, question: CodexQuestion) -> Bool {
+        question.multiSelect == true ? multiple(question).selected.contains(label)
+            : viewModel.questionDrafts[request.id]?[question.id] == label
+    }
+
+    private func select(_ label: String, question: CodexQuestion) {
+        if question.multiSelect == true {
+            var value = multiple(question)
+            if value.selected.contains(label) { value.selected.removeAll { $0 == label } }
+            else { value.selected.append(label) }
+            save(value, question: question)
+        } else {
+            viewModel.setAnswer(label, questionID: question.id, requestID: request.id)
+        }
+    }
+
+    private func answer(_ question: CodexQuestion) -> Binding<String> {
+        Binding(get: {
+            question.multiSelect == true ? multiple(question).custom : viewModel.questionDrafts[request.id]?[question.id] ?? ""
+        }, set: {
+            if question.multiSelect == true {
+                var value = multiple(question)
+                value.custom = $0
+                save(value, question: question)
+            } else {
+                viewModel.setAnswer($0, questionID: question.id, requestID: request.id)
+            }
         })
     }
 }

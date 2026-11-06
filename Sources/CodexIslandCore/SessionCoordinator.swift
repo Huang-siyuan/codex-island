@@ -122,7 +122,7 @@ public final class SessionCoordinator {
     public var pendingUserInput: CodexLogEvent? {
         latestLogEvents.values
             .filter {
-                $0.kind == .userInputRequested && threadSnapshots[$0.sessionKey] != nil
+                $0.kind == .userInputRequested && $0.shouldNotifyCompletion && threadSnapshots[$0.sessionKey] != nil
                     && $0.timestamp > (deliveredInputRequests[$0.sessionKey] ?? .distantPast)
             }
             .min { $0.timestamp < $1.timestamp }

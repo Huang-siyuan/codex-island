@@ -52,7 +52,13 @@ public actor PollingEngine {
         self.providers = providers
     }
 
-    public func pollOnce() -> PollingResult {
+    public func pollOnce(externalResults: [ProviderPollResult] = []) -> PollingResult {
+        for result in externalResults {
+            coordinator.pruneSessions(for: result.provider, keeping: Set(result.threadSnapshots.map(\.sessionKey)))
+            coordinator.apply(threadSnapshots: result.threadSnapshots)
+            coordinator.apply(messagePreviews: result.messagePreviews)
+            coordinator.apply(logEvents: result.logEvents)
+        }
         let unreadThreadIDs = unreadStateReader.readThreadIDs()
         do {
             let now = Date()

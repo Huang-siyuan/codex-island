@@ -8,6 +8,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let firstLaunchSetup = FirstLaunchSetup()
     private let pollingEngine = PollingEngine()
     private let desktopClient = CodexDesktopClient()
+    private let deepSeekClient = DeepSeekClient()
+    private let deepSeekAccountClient = DeepSeekAccountClient()
+    private var deepSeekAccountTask: Task<Void, Never>?
     private let focusTitleIndex = CodexFocusTitleIndex()
     private let usageSnapshotLoader = UsageSnapshotLoader()
     private let screenLocator = ActiveScreenLocator()
@@ -41,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         viewModel.onUsageRefreshRequested = { [weak self] in
             self?.loadUsageSnapshotIfNeeded(forceRefresh: true)
+            self?.refreshDeepSeekAccount()
         }
         Task { [weak self] in
             guard let self,
@@ -51,12 +55,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         viewModel.onQuestionAnswer = { [weak self] request, answers in
             guard let self else { throw CodexLocalError.unavailable }
-            try await desktopClient.answer(request, answers: answers)
+            if request.provider == .deepSeek {
+                try await deepSeekClient.answer(request, answers: answers)
+            } else {
+                try await desktopClient.answer(request, answers: answers)
+            }
         }
         viewModel.onQuotaRefreshRequested = { [weak self] in self?.refreshQuota() }
         quotaTask = Task { [weak self] in
             while !Task.isCancelled {
                 self?.refreshQuota()
+                self?.refreshDeepSeekAccount()
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }
             }
         }
@@ -77,9 +86,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         panelCoordinator.close()
-        Task { await desktopClient.close() }
+        Task {
+            await desktopClient.close()
+            await deepSeekClient.close()
+        }
         pollingTask?.cancel()
         quotaTask?.cancel()
+        deepSeekAccountTask?.cancel()
         quotaRefreshTask?.cancel()
         usageSnapshotTask?.cancel()
         positionTrackingTask?.cancel()
@@ -93,19 +106,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func runSnapshotRefreshLoop() async {
         while !Task.isCancelled {
-            let result = await pollingEngine.pollOnce()
+            let deepSeek = await deepSeekClient.refresh()
+            viewModel.deepSeekUsage = deepSeek.usage
+            viewModel.deepSeekConnected = deepSeek.isConnected
+            let result = await pollingEngine.pollOnce(externalResults: [deepSeek.poll])
             viewModel.apply(snapshot: result.snapshot)
             var codexIDs = Set(result.snapshot.sessionPreviews.filter { $0.provider == .codex }.map(\.threadID))
-            if let active = viewModel.pendingQuestions.first(where: { $0.id == viewModel.activeQuestionID || $0.id == viewModel.submittingQuestionID }) {
+            if let active = viewModel.pendingQuestions.first(where: { $0.provider == .codex && ($0.id == viewModel.activeQuestionID || $0.id == viewModel.submittingQuestionID) }) {
                 codexIDs.insert(active.threadID)
             }
-            viewModel.applyQuestions(await desktopClient.refresh(threadIDs: codexIDs))
+            viewModel.applyQuestions(await desktopClient.refresh(threadIDs: codexIDs) + deepSeek.questions)
             if viewModel.unreadCodexThreadIDs != result.unreadCodexThreadIDs {
                 viewModel.unreadCodexThreadIDs = result.unreadCodexThreadIDs
             }
 
             if let request = result.userInputNotification {
-                if !(await shouldSilence(provider: .codex, threadID: request.threadID)) {
+                if !(await shouldSilence(provider: request.provider, threadID: request.threadID)) {
                     notificationManager.notifyUserInputRequested()
                 }
                 await pollingEngine.consumeUserInputNotification(for: request)
@@ -174,6 +190,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 viewModel.quotaRefreshFailed = true
             }
+        }
+    }
+
+    private func refreshDeepSeekAccount() {
+        guard deepSeekAccountTask == nil else { return }
+        deepSeekAccountTask = Task { [weak self] in
+            guard let self else { return }
+            defer { deepSeekAccountTask = nil }
+            viewModel.deepSeekAccount = await deepSeekAccountClient.refresh()
         }
     }
 
