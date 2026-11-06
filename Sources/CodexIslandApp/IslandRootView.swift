@@ -210,8 +210,8 @@ struct IslandRootView: View {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(viewModel.sessionPreviews) { preview in
                     sessionPreviewCard(preview)
-                    if preview.provider == .codex {
-                        ForEach(viewModel.pendingQuestions.filter { $0.threadID == preview.threadID }) { request in
+                    if viewModel.pendingQuestions.contains(where: { $0.provider == preview.provider && $0.threadID == preview.threadID }) {
+                        ForEach(viewModel.pendingQuestions.filter { $0.provider == preview.provider && $0.threadID == preview.threadID }) { request in
                             CodexQuestionView(viewModel: viewModel, request: request, language: language)
                         }
                     }
@@ -219,7 +219,7 @@ struct IslandRootView: View {
                 // Keep an open answer form available if a newer session displaces its preview.
                 ForEach(viewModel.pendingQuestions.filter { request in
                     request.id == viewModel.activeQuestionID && !viewModel.sessionPreviews.contains {
-                        $0.provider == .codex && $0.threadID == request.threadID
+                        $0.provider == request.provider && $0.threadID == request.threadID
                     }
                 }) { request in
                     CodexQuestionView(viewModel: viewModel, request: request, language: language)
@@ -233,6 +233,7 @@ struct IslandRootView: View {
 
     private var usageContent: some View {
         VStack(alignment: .leading, spacing: IslandLayout.sectionSpacing) {
+            DeepSeekUsageView(usage: viewModel.deepSeekUsage, connected: viewModel.deepSeekConnected, account: viewModel.deepSeekAccount, language: language)
             SubscriptionQuotaView(viewModel: viewModel, language: language)
             UsageDashboardView(
                 metric: $panelState.usageMetric,

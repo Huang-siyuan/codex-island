@@ -12,18 +12,27 @@ public struct CodexQuestion: Codable, Equatable, Sendable, Identifiable {
     public let isOther: Bool?
     public let isSecret: Bool?
     public let options: [Option]?
+    public var multiSelect: Bool? = nil
 }
 
 public struct CodexQuestionRequest: Equatable, Sendable, Identifiable {
+    public var provider: ProviderKind = .codex
     public let threadID: String
     public let requestID: IPCValue
     public let ownerID: String
     public let questions: [CodexQuestion]
-    public var id: String { "\(threadID):\(requestID)" }
+    public var id: String { "\(provider.rawValue):\(threadID):\(requestID)" }
 
     public func validates(_ answers: [String: String]) -> Bool {
         !questions.isEmpty && questions.allSatisfy { question in
             guard let answer = answers[question.id]?.trimmingCharacters(in: .whitespacesAndNewlines), !answer.isEmpty else { return false }
+            if question.multiSelect == true {
+                guard let data = answer.data(using: .utf8),
+                      let value = try? JSONDecoder().decode(DeepSeekMultipleAnswer.self, from: data) else { return false }
+                let labels = Set((question.options ?? []).map(\.label))
+                return (!value.selected.isEmpty || !value.custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    && Set(value.selected).isSubset(of: labels)
+            }
             let options = question.options ?? []
             return options.isEmpty || question.isOther != false || options.contains { $0.label == answer }
         }
