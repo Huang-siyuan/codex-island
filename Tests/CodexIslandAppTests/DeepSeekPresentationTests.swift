@@ -42,6 +42,11 @@ func deepSeekPresentationInBothLanguagesAndAppearances() throws {
     for language in InterfaceLanguage.allCases {
         for appearance in IslandAppearance.allCases {
             let view = VStack(spacing: IslandLayout.sectionSpacing) {
+                HStack {
+                    IslandProviderBadge(provider: .codex)
+                    IslandProviderBadge(provider: .deepSeek)
+                    IslandUnreadBadge(language: language)
+                }
                 DeepSeekUsageView(
                     usage: [usage], connected: true, account: .balance(balance), language: language)
                 CodexQuestionView(viewModel: model, request: request, language: language)

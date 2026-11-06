@@ -1,6 +1,37 @@
 import CodexIslandCore
 import SwiftUI
 
+struct IslandProviderBadge: View {
+    let provider: ProviderKind
+
+    private var label: String {
+        switch provider {
+        case .codex: return "codex"
+        case .deepSeek: return "DSH"
+        default: return provider.displayName
+        }
+    }
+
+    private var tint: Color {
+        switch provider {
+        case .codex: return IslandPalette.providerCodex
+        case .deepSeek: return IslandPalette.providerDSH
+        default: return IslandPalette.subtitle
+        }
+    }
+
+    var body: some View {
+        Text(label)
+            .font(IslandTypography.control)
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(tint.opacity(0.12), in: Capsule())
+            .fixedSize()
+            .accessibilityLabel(provider.displayName)
+    }
+}
+
 struct IslandUnreadBadge: View {
     let language: InterfaceLanguage
 

@@ -16,7 +16,7 @@ struct DeepSeekUsageView: View {
         if connected || !usage.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("DeepSeek Harness").font(IslandTypography.section)
+                    IslandProviderBadge(provider: .deepSeek)
                     Spacer()
                     Text(
                         connected

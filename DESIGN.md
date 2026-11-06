@@ -64,7 +64,7 @@ Codex 发出输入请求时，会话与紧凑面板显示“等待输入 / Input
 
 ## 展开会话未读状态
 
-未读 Codex 会话卡片在运行状态之前显示「未读 / Unread」标签，复用 `IslandUnreadBadge`、`unread` 前景和 `unreadSurface` 背景。Codex 会话不显示来源标签，其他工具会话保留来源以便区分。未读与运行、完成、等待输入状态并列，不能互相替代；标签保留完整文字和「未读会话 / Unread conversation」辅助功能名称，两种外观使用相同样式。
+未读 Codex 会话卡片在运行状态之前显示「未读 / Unread」标签，复用 `IslandUnreadBadge`、`unread` 前景和 `unreadSurface` 背景。所有会话显示来源标签以便区分，复用 `IslandProviderBadge`：`codex` 使用 `providerCodex`（沿用绿色强调色），`DSH` 使用 `providerDSH`（柔和蓝色）。标签使用控件字体与低透明度胶囊背景，两种外观保持一致；辅助功能保留完整客户端名称。来源配色不改变运行、完成、等待输入的状态语义。未读与运行、完成、等待输入状态并列，不能互相替代；标签保留完整文字和「未读会话 / Unread conversation」辅助功能名称，两种外观使用相同样式。
 
 卡片与收起栏使用同一次轮询得到的有效未读会话 ID 集合；同数量下未读对象发生变化也更新。已读、其他提供方或状态不可用时不显示标签，展开和跳转不主动改写 Codex 已读状态，会话原有排序保持不变。
 

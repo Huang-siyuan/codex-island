@@ -6,6 +6,8 @@ enum IslandPalette {
     static let subtitle = Color.white.opacity(0.72)
     static let muted = Color.white.opacity(0.56)
     static let accent = Color(red: 0.28, green: 0.86, blue: 0.55)
+    static let providerCodex = accent
+    static let providerDSH = Color(red: 0.48, green: 0.67, blue: 0.88)
     static let onAccent = Color(red: 0.04, green: 0.12, blue: 0.08)
     static let surface = Color.white.opacity(0.05)
     static let emphasizedSurface = Color.white.opacity(0.10)
