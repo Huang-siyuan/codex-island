@@ -121,6 +121,20 @@ func deepSeekLivePassiveConnection() async throws {
     #expect(try deepSeekMaterial(events: history).event?.kind == .responseInterrupted)
 }
 
+@Test func deepSeekStringTurnEndReasonStillCompletes() throws {
+    let history =
+        #"{"event":{"type":"turn/end","seq":1,"time":1000,"data":{"reason":"completed"}}}"#
+    #expect(try deepSeekMaterial(events: history).event?.kind == .taskCompleted)
+}
+
+@Test func deepSeekUnfamiliarEventPayloadDoesNotAbortHistory() throws {
+    let history =
+        #"{"event":{"type":"turn/end","seq":1,"time":1000,"data":{"reason":42,"message":"text","name":7}}},{"event":{"type":"turn/start","seq":2,"time":2000}}"#
+    let material = try deepSeekMaterial(events: history)
+    #expect(material.threadSnapshot.threadID == "session")
+    #expect(material.event?.kind == .responseInterrupted)
+}
+
 @Test func deepSeekNewTurnDoesNotReuseInterruptedTool() throws {
     let history =
         #"{"event":{"type":"tool/call","seq":1,"time":1000,"data":{"name":"shell","callId":"old"}}},{"event":{"type":"turn/start","seq":2,"time":2000,"data":{}}}"#

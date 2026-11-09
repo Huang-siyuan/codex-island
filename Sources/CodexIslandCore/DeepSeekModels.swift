@@ -79,16 +79,70 @@ struct DeepSeekEvent: Decodable, Sendable {
     let seq: Int
     let time: Double
     let data: Payload
+
+    private enum CodingKeys: String, CodingKey {
+        case type, seq, time, data
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        seq = try container.decode(Int.self, forKey: .seq)
+        time = try container.decode(Double.self, forKey: .time)
+        // Events are only used for previews and status; an unfamiliar payload shape must not
+        // drop the whole history and hide every DeepSeek session.
+        data = (try? container.decode(Payload.self, forKey: .data)) ?? Payload()
+    }
+
     struct Payload: Decodable, Sendable {
         let reason: Reason?
         let message: Message?
         let name: String?
         let callId: String?
-        struct Reason: Decodable, Sendable { let kind: String }
+
+        init(reason: Reason? = nil, message: Message? = nil, name: String? = nil, callId: String? = nil) {
+            self.reason = reason
+            self.message = message
+            self.name = name
+            self.callId = callId
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case reason, message, name, callId
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            reason = try? container.decodeIfPresent(Reason.self, forKey: .reason)
+            message = try? container.decodeIfPresent(Message.self, forKey: .message)
+            name = try? container.decodeIfPresent(String.self, forKey: .name)
+            callId = try? container.decodeIfPresent(String.self, forKey: .callId)
+        }
+
+        struct Reason: Decodable, Sendable {
+            let kind: String
+
+            private enum CodingKeys: String, CodingKey { case kind }
+
+            init(kind: String) {
+                self.kind = kind
+            }
+
+            init(from decoder: Decoder) throws {
+                // Harness reports some endings as a bare string instead of a `kind` object.
+                if let value = try? decoder.singleValueContainer().decode(String.self) {
+                    kind = value
+                    return
+                }
+                kind = try decoder.container(keyedBy: CodingKeys.self).decode(String.self, forKey: .kind)
+            }
+        }
+
         struct Message: Decodable, Sendable {
             let content: [Content]?
             let toolCallId: String?
         }
+
         struct Content: Decodable, Sendable {
             let type: String
             let text: String?
