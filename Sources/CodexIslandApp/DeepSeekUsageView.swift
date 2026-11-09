@@ -7,9 +7,12 @@ struct DeepSeekUsageView: View {
     let account: DeepSeekAccountSnapshot
     let language: InterfaceLanguage
 
-    private func wallets(_ values: [DeepSeekBalance.Wallet]?) -> String {
-        guard let values, !values.isEmpty else { return "—" }
-        return values.map { "\($0.balance) \($0.currency)" }.joined(separator: " · ")
+    private var unavailableAmount: String {
+        language.text("Unavailable", "暂不可用")
+    }
+
+    private func walletsText(_ wallets: [DeepSeekBalance.Wallet]?) -> String {
+        DeepSeekBalancePresentation.walletsText(wallets, locale: language.locale) ?? unavailableAmount
     }
 
     var body: some View {
@@ -33,10 +36,12 @@ struct DeepSeekUsageView: View {
                     Text(language.text("Account balance unavailable", "账号余额暂不可用"))
                         .font(IslandTypography.caption).foregroundStyle(IslandPalette.subtitle)
                 case .balance(let balance):
-                    Text(language.text("Balance", "余额") + ": " + wallets(balance.value))
+                    Text(language.text("Balance", "余额") + ": " + walletsText(balance.value))
                         .font(IslandTypography.body)
-                    if let bonus = balance.bonusWallets, !bonus.isEmpty {
-                        Text(language.text("Bonus", "赠送余额") + ": " + wallets(bonus))
+                    if let bonus = DeepSeekBalancePresentation.walletsText(
+                        balance.bonusWallets, locale: language.locale
+                    ) {
+                        Text(language.text("Bonus", "赠送余额") + ": " + bonus)
                             .font(IslandTypography.caption).foregroundStyle(IslandPalette.subtitle)
                     }
                 }
@@ -44,20 +49,6 @@ struct DeepSeekUsageView: View {
                     .font(IslandTypography.caption).foregroundStyle(IslandPalette.subtitle)
                 Text(usage.reduce(0) { $0 + $1.tokens.totalTokens }.formatted())
                     .font(IslandTypography.section).monospacedDigit()
-                ForEach(usage.prefix(3)) { session in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(session.title).font(IslandTypography.body).lineLimit(1)
-                        Text("\(session.tokens.totalTokens.formatted()) tokens")
-                            .font(IslandTypography.caption).foregroundStyle(IslandPalette.subtitle)
-                        if let used = session.contextTokens, let limit = session.contextWindow, limit > 0 {
-                            ProgressView(value: Double(max(0, min(used, limit))), total: Double(limit))
-                                .tint(IslandPalette.accent)
-                                .accessibilityLabel(language.text("Context usage", "上下文用量"))
-                            Text(language.text("Context", "上下文") + " \(used.formatted()) / \(limit.formatted())")
-                                .font(IslandTypography.caption).foregroundStyle(IslandPalette.subtitle)
-                        }
-                    }
-                }
             }
             .padding(IslandLayout.cardPadding)
             .modifier(IslandSurface())

@@ -121,6 +121,20 @@ func deepSeekLivePassiveConnection() async throws {
     #expect(try deepSeekMaterial(events: history).event?.kind == .responseInterrupted)
 }
 
+@Test func deepSeekBalanceUsesCurrencyPrecision() {
+    let locale = Locale(identifier: "en_US_POSIX")
+    #expect(DeepSeekBalancePresentation.amountText("14.1171576000000000", locale: locale) == "14.12")
+    #expect(DeepSeekBalancePresentation.amountText("1.9181400800000000", locale: locale) == "1.92")
+    #expect(DeepSeekBalancePresentation.amountText("0", locale: locale) == "0.00")
+    #expect(DeepSeekBalancePresentation.amountText("unknown", locale: locale) == "unknown")
+    let wallets = [
+        DeepSeekBalance.Wallet(currency: "CNY", balance: "12.344"),
+        DeepSeekBalance.Wallet(currency: "USD", balance: "3.5"),
+    ]
+    #expect(DeepSeekBalancePresentation.walletsText(wallets, locale: locale) == "12.34 CNY · 3.50 USD")
+    #expect(DeepSeekBalancePresentation.walletsText([], locale: locale) == nil)
+}
+
 @Test func deepSeekStringTurnEndReasonStillCompletes() throws {
     let history =
         #"{"event":{"type":"turn/end","seq":1,"time":1000,"data":{"reason":"completed"}}}"#

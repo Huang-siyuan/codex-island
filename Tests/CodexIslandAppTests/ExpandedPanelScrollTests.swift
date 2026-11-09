@@ -54,10 +54,13 @@ import Testing
     let knobFrame = scroller.convert(scroller.rect(for: .knob), to: host)
     let scrollerFrame = scrollView.convert(scrollView.bounds, to: host)
 
-    #expect(contentWidth == panelWidth - 2 * IslandLayout.panelPadding)
-    // The scroll view reaches the shell edge so the scroller grows inside the padding.
-    #expect(abs(scrollerFrame.maxX - panelWidth) < 1)
+    // Overlay scrollers float over the scroll view, so the page must end before them.
     #expect(knobFrame.minX > contentRightEdge)
+    if scrollView.scrollerStyle == .overlay {
+        #expect(contentWidth == panelWidth - 2 * IslandLayout.panelPadding)
+        // The scroll view reaches the shell edge so the scroller grows inside the padding.
+        #expect(abs(scrollerFrame.maxX - panelWidth) < 1)
+    }
 
     window.close()
 }

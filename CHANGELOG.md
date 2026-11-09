@@ -7,6 +7,7 @@ All notable changes to Codex Island are recorded here.
 ### Fixed — 2026-11-09
 
 - 展开面板的系统滚动条改为绘制在面板右侧内边距中，不再覆盖会话、用量和设置页面的卡片内容；卡片宽度、左右内边距和页面排版保持不变，收起栏不受影响。
+- DeepSeek 用量卡片只展示汇总：账号余额、赠送余额和本机会话累计 Token；不再逐条列出最近会话与上下文进度，余额由服务端原始小数改为按币种保留两位小数。
 - DeepSeek Harness 事件改为容错解析：`turn/end` 的 `reason` 同时支持 `{kind}` 对象和字符串，未知类型的事件字段降级为缺省值。此前单条事件的字段类型变化会让整个刷新失败，用量页的 DSH 卡片、会话列表和问题入口会一起消失。
 
 ### Verification — 2026-11-09
@@ -14,6 +15,7 @@ All notable changes to Codex Island are recorded here.
 - `swift test`：150 项测试通过；新增布局回归测试校验滚动条滑块位于页面内容右侧（751–757pt 对卡片右缘 744pt），移除内边距预留后滑块左移到 735pt，测试失败。
 - 通过临时调试入口展开真实面板读取 AppKit 滚动视图几何：内容视口 16–760pt，页面内容宽度保持 728pt，滚动条位于面板内边距内；调试入口在提交前移除。
 - Release 构建打包安装成功，安装文件与打包产物 SHA-256 一致，安装后已清理 `dist/Codex Island.app` 临时副本。
+- DeepSeek 用量卡片精简后组件渲染检查（中英文 × 经典深色/macOS 玻璃）通过，卡片只保留余额与累计 Token；`swift test`：153 项测试通过，新增余额小数格式化回归测试。
 - DeepSeek 事件容错修复后 `swift test`：152 项测试通过，新增字符串 `reason` 与未知事件字段的回归测试；`ISLAND_DEEPSEEK_LIVE_TEST=1 swift test --filter deepSeekLivePassiveConnection` 恢复通过（修复前同一测试在 `data.reason` 解码处失败，返回未连接）。
 
 ### Added — 2026-11-06
