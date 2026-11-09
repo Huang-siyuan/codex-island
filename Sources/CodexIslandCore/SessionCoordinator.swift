@@ -138,10 +138,10 @@ public final class SessionCoordinator {
         let event = primaryKey.flatMap { latestLogEvents[$0] }
         let recentActivity = primary.map(activityDate(for:))
         let activeProvider = primary?.provider
-        let providerSnapshots = activeProvider.map(snapshots(for:)) ?? []
+        let trackedSnapshots = Array(threadSnapshots.values)
         let didConfirmCompletion = primary.map { isCompletionConfirmed(for: $0.sessionKey) } ?? false
-        let sessionPreviews = providerSnapshots
-            .sorted(by: { activityDate(for: $0) > activityDate(for: $1) })
+        let sessionPreviews = trackedSnapshots
+            .sorted(by: { isOrderedBefore($0, $1, primaryKey: primaryKey) })
             .prefix(sessionPreviewLimit)
             .map { snapshot in
                 let key = snapshot.sessionKey
@@ -178,14 +178,24 @@ public final class SessionCoordinator {
             ),
             latestToolSummary: latestToolSummary(for: event),
             sourceLabel: activeProvider?.displayName ?? "AI Tools",
-            activeSessionCount: providerSnapshots.count,
+            activeSessionCount: trackedSnapshots.count,
             sessionPreviews: sessionPreviews,
             shouldNotifyCompletion: didConfirmCompletion && shouldNotifyCompletion(for: primaryKey)
         )
     }
 
-    private func snapshots(for provider: ProviderKind) -> [ThreadSnapshot] {
-        threadSnapshots.values.filter { $0.provider == provider }
+    // 所有提供方的会话共用一张列表，按最近活动倒序排列；活动时间相同时保持稳定顺序，
+    // 并让当前会话排在同时间会话之前，避免字典遍历顺序影响界面。
+    private func isOrderedBefore(_ lhs: ThreadSnapshot, _ rhs: ThreadSnapshot, primaryKey: String?) -> Bool {
+        let lhsActivity = activityDate(for: lhs)
+        let rhsActivity = activityDate(for: rhs)
+        if lhsActivity != rhsActivity {
+            return lhsActivity > rhsActivity
+        }
+        if (lhs.sessionKey == primaryKey) != (rhs.sessionKey == primaryKey) {
+            return lhs.sessionKey == primaryKey
+        }
+        return lhs.sessionKey < rhs.sessionKey
     }
 
     private func primarySnapshot() -> ThreadSnapshot? {
