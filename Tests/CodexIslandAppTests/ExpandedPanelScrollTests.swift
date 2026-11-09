@@ -4,10 +4,10 @@ import AppKit
 import SwiftUI
 import Testing
 
-/// The expanded panel draws macOS overlay scrollers on its trailing edge. They must stay in the
-/// shell's padding instead of covering the cards the page renders at full content width.
+/// The expanded panel hides system scrollers, which macOS would otherwise draw on top of the
+/// cards at the trailing edge. Pages keep their full width and stay scrollable.
 @MainActor
-@Test func expandedPanelScrollerKeepsClearOfPageContent() throws {
+@Test func expandedPanelHidesSystemScrollersWithoutNarrowingPages() throws {
     let panelWidth: CGFloat = 760
     let measuredContentWidth = WidthMeasurement()
 
@@ -47,20 +47,12 @@ import Testing
     host.layoutSubtreeIfNeeded()
 
     let scrollView = try #require(firstScrollView(in: host))
-    let scroller = try #require(scrollView.verticalScroller)
 
-    let contentWidth = try #require(measuredContentWidth.value)
-    let contentRightEdge = IslandLayout.panelPadding + contentWidth
-    let knobFrame = scroller.convert(scroller.rect(for: .knob), to: host)
-    let scrollerFrame = scrollView.convert(scrollView.bounds, to: host)
-
-    // Overlay scrollers float over the scroll view, so the page must end before them.
-    #expect(knobFrame.minX > contentRightEdge)
-    if scrollView.scrollerStyle == .overlay {
-        #expect(contentWidth == panelWidth - 2 * IslandLayout.panelPadding)
-        // The scroll view reaches the shell edge so the scroller grows inside the padding.
-        #expect(abs(scrollerFrame.maxX - panelWidth) < 1)
-    }
+    #expect(scrollView.verticalScroller == nil)
+    #expect(!scrollView.hasVerticalScroller)
+    // Hiding the scroller must not reserve a gutter or shrink the page.
+    #expect(measuredContentWidth.value == panelWidth - 2 * IslandLayout.panelPadding)
+    #expect(scrollView.documentView.map { $0.frame.height > scrollView.contentSize.height } == true)
 
     window.close()
 }
