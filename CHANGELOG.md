@@ -6,14 +6,14 @@ All notable changes to Codex Island are recorded here.
 
 ### Fixed — 2026-11-09
 
-- 展开面板改为隐藏系统滚动条。macOS 会把滚动条画在卡片上，预留间隙又会让页面变窄，因此不再保留右侧间隙；页面宽度占满左右内边距，触控板、滚轮和键盘滚动保持可用，收起栏不受影响。
+- 展开面板改为不显示系统滚动条（`.scrollIndicators(.never)`）。macOS 会把滚动条画在卡片上，预留间隙又会让页面变窄，因此不再保留右侧间隙；页面宽度占满左右内边距，触控板、滚轮和键盘滚动保持可用，收起栏不受影响。`.hidden` 在真实窗口里仍会安装经典滚动条列并挤占 17pt 宽度，故不使用。
 - DeepSeek 用量卡片只展示汇总：账号余额、赠送余额和本机会话累计 Token；不再逐条列出最近会话与上下文进度，余额由服务端原始小数改为按币种保留两位小数。
 - DeepSeek Harness 事件改为容错解析：`turn/end` 的 `reason` 同时支持 `{kind}` 对象和字符串，未知类型的事件字段降级为缺省值。此前单条事件的字段类型变化会让整个刷新失败，用量页的 DSH 卡片、会话列表和问题入口会一起消失。
 
 ### Verification — 2026-11-09
 
 - `swift test`：153 项测试通过；布局回归测试校验展开面板不安装竖向滚动条、页面宽度保持 728pt，恢复显示滚动条时该测试失败（竖向滚动条重新出现且内容宽度缩到 711pt）。
-- 通过临时调试入口展开真实面板确认：用量页不再出现滚动条，卡片宽度保持 728pt，长页面仍可正常滚动；调试入口在提交前移除。
+- 通过临时调试入口展开真实面板读取 AppKit 层级确认：`hasVerticalScroller = false`、竖向滚动条不存在，页面宽度 728pt（改用 `.never` 前为 716pt，另加 17pt 经典滚动条列），长页面仍可滚动；调试入口在提交前移除。
 - Release 构建打包安装成功，安装文件与打包产物 SHA-256 一致，安装后已清理 `dist/Codex Island.app` 临时副本。
 - DeepSeek 用量卡片精简后组件渲染检查（中英文 × 经典深色/macOS 玻璃）通过，卡片只保留余额与累计 Token；新增余额小数格式化回归测试。
 - DeepSeek 事件容错修复后 `swift test`：152 项测试通过，新增字符串 `reason` 与未知事件字段的回归测试；`ISLAND_DEEPSEEK_LIVE_TEST=1 swift test --filter deepSeekLivePassiveConnection` 恢复通过（修复前同一测试在 `data.reason` 解码处失败，返回未连接）。

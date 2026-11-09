@@ -174,9 +174,10 @@ struct IslandMenuPicker<Option: Hashable>: View {
 
 /// Scroll container for the expanded island pages.
 ///
-/// The panel hides the system scrollers: macOS draws them on top of the cards at the trailing
-/// edge, and a reserved gutter made the page narrower for no visible gain. Trackpad, wheel and
-/// keyboard scrolling still work, and the page keeps the full span between the shell paddings.
+/// The panel drops the system scrollers instead of drawing them or reserving a gutter: macOS
+/// paints them over the cards, and `.scrollIndicators(.hidden)` still installs the classic
+/// scroller column in normal windows. Trackpad, wheel and keyboard scrolling keep working, and
+/// the page spans the full width between the shell paddings.
 struct IslandPanelScrollView<Content: View>: View {
     private let content: Content
 
@@ -188,6 +189,6 @@ struct IslandPanelScrollView<Content: View>: View {
         ScrollView {
             content
         }
-        .scrollIndicators(.hidden)
+        .scrollIndicators(.never)
     }
 }
