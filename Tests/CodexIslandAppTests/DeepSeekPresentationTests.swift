@@ -33,7 +33,7 @@ func deepSeekPresentationInBothLanguagesAndAppearances() throws {
     let balance = try JSONDecoder().decode(
         DeepSeekBalance.self,
         from: Data(
-            #"{"status":"ready","value":[{"currency":"CNY","balance":"12.34"}],"bonusWallets":[]}"#.utf8))
+            #"{"status":"ready","value":[{"currency":"CNY","balance":"14.1171576000000000"}],"bonusWallets":[{"currency":"CNY","balance":"1.1857938400000000"}]}"#.utf8))
     let usage = DeepSeekUsageSummary(
         id: "s", title: "兼容测试 / Compatibility test",
         tokens: .init(
