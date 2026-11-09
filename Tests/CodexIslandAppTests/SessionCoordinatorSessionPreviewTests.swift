@@ -96,7 +96,7 @@ func sessionCoordinatorSanitizesSessionTitle() {
 }
 
 @Test
-func sessionCoordinatorShowsOnlyActiveProvidersSessions() {
+func sessionCoordinatorMixesProvidersInRecencyOrder() {
     let coordinator = SessionCoordinator(now: { Date(timeIntervalSince1970: 400) })
     let codexThread = ThreadSnapshot(
         provider: .codex,
@@ -139,12 +139,64 @@ func sessionCoordinatorShowsOnlyActiveProvidersSessions() {
 
     let snapshot = coordinator.currentSnapshot
 
+    // 会话列表跨提供方混排，只按最近活动倒序，不再只显示当前会话所属的提供方。
     #expect(snapshot.activeProvider == .codex)
     #expect(snapshot.sourceLabel == "Codex")
-    #expect(snapshot.sessionPreviews.count == 1)
-    #expect(snapshot.sessionPreviews.first?.provider == .codex)
-    #expect(snapshot.sessionPreviews.first?.threadID == "codex-1")
+    #expect(snapshot.activeSessionCount == 3)
+    #expect(snapshot.sessionPreviews.map(\.threadID) == ["buddy-1", "buddy-2", "codex-1"])
+    #expect(snapshot.sessionPreviews.map(\.provider) == [.codeBuddy, .codeBuddy, .codex])
 }
+
+@Test
+func sessionCoordinatorLimitsMixedProviderPreviewsByRecency() {
+    let coordinator = SessionCoordinator(now: { Date(timeIntervalSince1970: 600) })
+    let codexNewest = ThreadSnapshot(
+        provider: .codex,
+        threadID: "codex-newest",
+        title: "Codex newest",
+        source: "desktop",
+        cwd: "/tmp/codex-newest",
+        updatedAt: Date(timeIntervalSince1970: 500),
+        firstUserMessage: nil
+    )
+    let deepSeekSecond = ThreadSnapshot(
+        provider: .deepSeek,
+        threadID: "dsh-second",
+        title: "DSH second",
+        source: "dsh",
+        cwd: "/tmp/dsh-second",
+        updatedAt: Date(timeIntervalSince1970: 480),
+        firstUserMessage: nil
+    )
+    let codexThird = ThreadSnapshot(
+        provider: .codex,
+        threadID: "codex-third",
+        title: "Codex third",
+        source: "desktop",
+        cwd: "/tmp/codex-third",
+        updatedAt: Date(timeIntervalSince1970: 300),
+        firstUserMessage: nil
+    )
+    let deepSeekOldest = ThreadSnapshot(
+        provider: .deepSeek,
+        threadID: "dsh-oldest",
+        title: "DSH oldest",
+        source: "dsh",
+        cwd: "/tmp/dsh-oldest",
+        updatedAt: Date(timeIntervalSince1970: 100),
+        firstUserMessage: nil
+    )
+
+    coordinator.apply(threadSnapshots: [codexNewest, deepSeekSecond, codexThird, deepSeekOldest])
+
+    let snapshot = coordinator.currentSnapshot
+
+    // 三个名额同样跨提供方按时间竞争，最旧的 DSH 会话不会因为提供方而被保留。
+    #expect(snapshot.sessionPreviews.map(\.threadID) == ["codex-newest", "dsh-second", "codex-third"])
+    #expect(snapshot.sessionPreviews.map(\.provider) == [.codex, .deepSeek, .codex])
+    #expect(snapshot.activeSessionCount == 4)
+}
+
 @Test
 func sessionCoordinatorDropsSessionsThatAreNoLongerTrackedForProvider() {
     let coordinator = SessionCoordinator(now: { Date(timeIntervalSince1970: 500) })
