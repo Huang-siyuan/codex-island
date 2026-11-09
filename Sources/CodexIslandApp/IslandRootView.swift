@@ -60,7 +60,7 @@ struct IslandRootView: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(.horizontal, isExpanded ? 16 : IslandStatusPresentation.compactHorizontalPadding)
+        .padding(.horizontal, isExpanded ? IslandLayout.panelPadding : IslandStatusPresentation.compactHorizontalPadding)
         .padding(.vertical, isExpanded ? 14 : 0)
         .frame(width: isExpanded ? expandedWidth : compactShellWidth, alignment: .leading)
         .frame(height: isExpanded ? nil : compactShellHeight, alignment: .center)
@@ -168,7 +168,7 @@ struct IslandRootView: View {
     }
 
     private var expandedContent: some View {
-        ScrollView {
+        IslandPanelScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 switch panelState.selectedExpandedTab {
                 case .sessions:

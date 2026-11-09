@@ -66,6 +66,7 @@ enum IslandLayout {
     static let cardRadius: CGFloat = 16
     static let shellRadius: CGFloat = 28
     static let controlHeight: CGFloat = 28
+    static let panelPadding: CGFloat = 16
 }
 
 struct IslandSurface: ViewModifier {

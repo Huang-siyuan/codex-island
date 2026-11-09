@@ -171,3 +171,26 @@ struct IslandMenuPicker<Option: Hashable>: View {
         .frame(maxWidth: .infinity, minHeight: IslandLayout.controlHeight, alignment: .leading)
     }
 }
+
+/// Scroll container for the expanded island pages.
+///
+/// macOS draws overlay scrollers on top of the trailing edge of the scroll view, where cards
+/// would otherwise sit. The shell's horizontal padding is reserved as that gutter: the scroll
+/// view extends into the padding while the page keeps its current inset, so scrollers, including
+/// the wider hover state, never cover card content. Legacy scrollers keep their own column and
+/// stay clear of the content for the same reason.
+struct IslandPanelScrollView<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView {
+            content
+                .padding(.trailing, IslandLayout.panelPadding)
+        }
+        .padding(.trailing, -IslandLayout.panelPadding)
+    }
+}
