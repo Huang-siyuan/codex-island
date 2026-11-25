@@ -223,3 +223,21 @@ private struct UnreadFixture {
         try? FileManager.default.removeItem(at: root)
     }
 }
+
+@Test
+func sideChatsShareParentUnreadBadgeAndAgentMarkedDesktopThreadsAreIgnored() throws {
+    let fixture = try UnreadFixture()
+    defer { fixture.remove() }
+    try fixture.execute("""
+        alter table threads add column attached_thread_parent_id text;
+        insert into threads values
+        ('main', 0, 'vscode', 'user', null),
+        ('side', 0, 'vscode', 'user', 'main'),
+        ('nested', 0, 'vscode', 'user', 'side'),
+        ('agent', 0, 'vscode', 'subagent', null)
+        """)
+    try fixture.writeState(ids: ["side", "nested", "agent"])
+    #expect(fixture.reader().readThreadIDs() == ["main"])
+    try fixture.writeState(ids: ["agent"])
+    #expect(fixture.reader().readThreadIDs() == [])
+}

@@ -292,7 +292,7 @@ struct IslandRootView: View {
         .accessibilityAddTraits(panelState.selectedExpandedTab == .settings ? .isSelected : [])
     }
 
-    private func sessionPreviewCard(_ preview: SessionPreview) -> some View {
+    func sessionPreviewCard(_ preview: SessionPreview) -> some View {
         Button {
             viewModel.openSession(preview)
         } label: {
@@ -322,6 +322,13 @@ struct IslandRootView: View {
                                 )
                                 badge(text: relativeAgeText(for: preview.updatedAt), color: IslandPalette.surface)
                             }
+                        }
+
+                        ForEach(preview.sideChatCompletions) { completion in
+                            Text(language.text("Side chat completed: \(completion.title)", "侧聊已完成：\(completion.title)"))
+                                .font(IslandTypography.caption)
+                                .foregroundStyle(IslandPalette.subtitle)
+                                .lineLimit(2)
                         }
 
                         if let userPreview = preview.userPreview, !userPreview.isEmpty {

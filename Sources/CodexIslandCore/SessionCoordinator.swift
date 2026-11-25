@@ -159,8 +159,9 @@ public final class SessionCoordinator {
                     userPreview: latestUserPreviews[key]?.text ?? fallbackUserPreview(for: snapshot),
                     assistantPreview: latestAssistantPreviews[key]?.text,
                     latestToolSummary: latestToolSummary(for: latestLogEvents[key]),
-                    updatedAt: activityDate(for: snapshot),
+                    updatedAt: listActivityDate(for: snapshot),
                     isPrimary: key == primaryKey,
+                    sideChatCompletions: snapshot.sideChatCompletions,
                     navigationTarget: snapshot.navigationTarget
                 )
             }
@@ -187,8 +188,8 @@ public final class SessionCoordinator {
     // 所有提供方的会话共用一张列表，按最近活动倒序排列；活动时间相同时保持稳定顺序，
     // 并让当前会话排在同时间会话之前，避免字典遍历顺序影响界面。
     private func isOrderedBefore(_ lhs: ThreadSnapshot, _ rhs: ThreadSnapshot, primaryKey: String?) -> Bool {
-        let lhsActivity = activityDate(for: lhs)
-        let rhsActivity = activityDate(for: rhs)
+        let lhsActivity = listActivityDate(for: lhs)
+        let rhsActivity = listActivityDate(for: rhs)
         if lhsActivity != rhsActivity {
             return lhsActivity > rhsActivity
         }
@@ -293,6 +294,10 @@ public final class SessionCoordinator {
         case .responseCreated, .responseInProgress, .responseCompleted, .taskCompleted, .responseInterrupted, .userInputRequested:
             return nil
         }
+    }
+
+    private func listActivityDate(for snapshot: ThreadSnapshot) -> Date {
+        max(activityDate(for: snapshot), snapshot.sideChatCompletions.first?.timestamp ?? .distantPast)
     }
 
     private func activityDate(for snapshot: ThreadSnapshot) -> Date {

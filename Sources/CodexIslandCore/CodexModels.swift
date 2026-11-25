@@ -45,6 +45,12 @@ public struct SessionIndexEntry: Sendable, Equatable {
     }
 }
 
+public struct SideChatCompletion: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let title: String
+    public let timestamp: Date
+}
+
 public struct ThreadSnapshot: Sendable, Equatable {
     public let provider: ProviderKind
     public let threadID: String
@@ -53,6 +59,8 @@ public struct ThreadSnapshot: Sendable, Equatable {
     public let cwd: String?
     public let updatedAt: Date
     public let firstUserMessage: String?
+    public internal(set) var sideChatCompletions: [SideChatCompletion] = []
+    public let mainThreadID: String?
     public let rolloutPath: String?
 
     public init(
@@ -63,7 +71,8 @@ public struct ThreadSnapshot: Sendable, Equatable {
         cwd: String?,
         updatedAt: Date,
         firstUserMessage: String? = nil,
-        rolloutPath: String? = nil
+        rolloutPath: String? = nil,
+        mainThreadID: String? = nil
     ) {
         self.provider = provider
         self.threadID = threadID
@@ -72,6 +81,7 @@ public struct ThreadSnapshot: Sendable, Equatable {
         self.cwd = cwd
         self.updatedAt = updatedAt
         self.firstUserMessage = firstUserMessage
+        self.mainThreadID = mainThreadID
         self.rolloutPath = rolloutPath
     }
 
@@ -200,6 +210,7 @@ public struct SessionPreview: Sendable, Equatable, Identifiable {
     public let assistantPreview: String?
     public let latestToolSummary: String?
     public let updatedAt: Date
+    public let sideChatCompletions: [SideChatCompletion]
     public let isPrimary: Bool
     public let navigationTarget: SessionNavigationTarget
 
@@ -214,6 +225,7 @@ public struct SessionPreview: Sendable, Equatable, Identifiable {
         latestToolSummary: String?,
         updatedAt: Date,
         isPrimary: Bool,
+        sideChatCompletions: [SideChatCompletion] = [],
         navigationTarget: SessionNavigationTarget? = nil
     ) {
         self.id = SessionIdentity.key(provider: provider, threadID: threadID)
@@ -226,6 +238,7 @@ public struct SessionPreview: Sendable, Equatable, Identifiable {
         self.assistantPreview = assistantPreview
         self.latestToolSummary = latestToolSummary
         self.updatedAt = updatedAt
+        self.sideChatCompletions = sideChatCompletions
         self.isPrimary = isPrimary
         self.navigationTarget = navigationTarget ?? {
             switch provider {

@@ -630,3 +630,41 @@ func codexDiagnosticCompletionStillWaitsForQuietTime() async throws {
     #expect(result.completionNotification == nil)
     #expect(result.snapshot.statusText == "Running")
 }
+
+@Test
+func sideChatCompletionsAppearOnTheRunningMainThreadWhileAgentsStaySilent() throws {
+    let fixture = try CompletionFixture()
+    defer { fixture.remove() }
+    try fixture.execute("""
+        alter table threads add column attached_thread_parent_id text;
+        alter table threads add column thread_source text;
+        """, at: fixture.state)
+    try fixture.append(lifecycleLine("task_started", second: 1))
+    for (id, parent, kind) in [
+        ("side", "thread-1", "user"), ("nested", "side", "user"),
+        ("agent", "thread-1", "subagent"), ("orphan", "missing", "user"),
+        ("agent-side", "agent", "user"),
+    ] {
+        let file = fixture.root.appendingPathComponent(id)
+        try lifecycleLine("task_complete", second: 10).write(to: file, atomically: true, encoding: .utf8)
+        try fixture.execute("""
+            insert into threads (id, title, source, updated_at, rollout_path, archived, attached_thread_parent_id, thread_source)
+            values ('\(id)', '\(id)', 'vscode', 2000000000, '\(file.path)', 0, '\(parent)', '\(kind)')
+            """, at: fixture.state)
+    }
+    let provider = fixture.provider()
+    let coordinator = SessionCoordinator()
+    for _ in 0..<3 {
+        let result = try provider.poll()
+        #expect(result.threadSnapshots.map(\.threadID) == ["thread-1"])
+        #expect(result.logEvents.allSatisfy { $0.threadID == "thread-1" })
+        coordinator.apply(threadSnapshots: result.threadSnapshots)
+        coordinator.apply(logEvents: result.logEvents)
+        let card = try #require(coordinator.currentSnapshot.sessionPreviews.first)
+        #expect(card.sideChatCompletions.map(\.title) == ["nested", "side"])
+        #expect(card.navigationTarget == .codex(threadID: "thread-1"))
+        #expect(card.statusText == "Running")
+        #expect(coordinator.pendingCompletion == nil)
+        #expect(coordinator.pendingUserInput == nil)
+    }
+}
