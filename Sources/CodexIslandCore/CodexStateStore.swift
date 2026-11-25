@@ -27,6 +27,29 @@ struct DataSourceVersion: Equatable {
     }
 }
 
+// Start at visible roots so an archived, internal or missing ancestor hides its entire subtree.
+enum CodexThreadHierarchy {
+    static func queryPrefix(databaseURL: URL) throws -> String {
+        struct Column: Decodable { let name: String }
+        let columns: [Column] = try SQLiteShell().query(databaseURL: databaseURL, query: "pragma table_info(threads)")
+        let names = Set(columns.map(\.name))
+        let parent = names.contains("attached_thread_parent_id") ? "attached_thread_parent_id" : "NULL"
+        let kind = names.contains("thread_source") ? "coalesce(thread_source, '')" : "''"
+        return """
+            with recursive visible as materialized (
+                select id, \(parent) as parent_id from threads
+                where archived = 0
+                  and source in ('vscode', 'cli', 'exec', 'appServer', 'desktop', '{"custom":"atlas"}', '{"custom":"chatgpt"}')
+                  and \(kind) not in ('subagent', 'chatgpt_hidden', 'ambient_suggestions')
+            ), family(id, root_id) as (
+                select id, id from visible where parent_id is null
+                union all
+                select child.id, family.root_id from visible child join family on child.parent_id = family.id
+            )
+            """
+    }
+}
+
 public final class CodexStateStore {
     private let environment: AppEnvironment
     private let shell = SQLiteShell()
@@ -47,37 +70,35 @@ public final class CodexStateStore {
     }
 
     public func fetchRecentThreads(limit: Int = 6) throws -> [ThreadSnapshot] {
-        let query = """
-        select id, title, source, cwd, updated_at, first_user_message, rollout_path
-        from threads
-        where archived = 0
-        order by updated_at desc
-        limit \(limit);
-        """
+        try fetchThreadFamily(limit: limit).filter { $0.mainThreadID == nil }
+    }
 
-        do {
-            let rows: [ThreadRow] = try shell.query(databaseURL: environment.stateStoreURL, query: query)
-            if rows.isEmpty {
-                return try sessionIndexReader.readRecentSnapshots(from: environment.sessionIndexURL, limit: limit)
-            }
-            let titleOverrides = try? sessionIndexReader.readTitleOverrides(
-                from: environment.sessionIndexURL,
-                threadIDs: Set(rows.map(\.id))
+    func fetchThreadFamily(limit: Int) throws -> [ThreadSnapshot] {
+        let prefix = try CodexThreadHierarchy.queryPrefix(databaseURL: environment.stateStoreURL)
+        let rows: [ThreadRow] = try shell.query(databaseURL: environment.stateStoreURL, query: """
+            \(prefix), recent as (
+                select root_id from family join threads using (id)
+                group by root_id order by max(updated_at) desc, root_id limit \(limit)
             )
-            return rows.map {
-                ThreadSnapshot(
-                    provider: .codex,
-                    threadID: $0.id,
-                    title: titleOverrides?[$0.id] ?? $0.title,
-                    source: $0.source,
-                    cwd: $0.cwd,
-                    updatedAt: Date(timeIntervalSince1970: TimeInterval($0.updatedAt)),
-                    firstUserMessage: $0.firstUserMessage,
-                    rolloutPath: $0.rolloutPath
-                )
-            }
-        } catch {
-            return try sessionIndexReader.readRecentSnapshots(from: environment.sessionIndexURL, limit: limit)
+            select threads.id, title, source, cwd, updated_at, first_user_message, rollout_path,
+                   nullif(family.root_id, threads.id) as main_thread_id
+            from threads join family using (id) join recent using (root_id)
+            order by updated_at desc, threads.id
+            """)
+        let titles = try? sessionIndexReader.readTitleOverrides(
+            from: environment.sessionIndexURL, threadIDs: Set(rows.map(\.id))
+        )
+        return rows.map {
+            ThreadSnapshot(
+                threadID: $0.id,
+                title: titles?[$0.id] ?? $0.title,
+                source: $0.source,
+                cwd: $0.cwd,
+                updatedAt: Date(timeIntervalSince1970: TimeInterval($0.updatedAt)),
+                firstUserMessage: $0.firstUserMessage,
+                rolloutPath: $0.rolloutPath,
+                mainThreadID: $0.mainThreadID
+            )
         }
     }
 
@@ -180,6 +201,7 @@ private struct ThreadRow: Decodable {
     let updatedAt: Int64
     let firstUserMessage: String?
     let rolloutPath: String?
+    let mainThreadID: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -188,6 +210,7 @@ private struct ThreadRow: Decodable {
         case cwd
         case updatedAt = "updated_at"
         case firstUserMessage = "first_user_message"
+        case mainThreadID = "main_thread_id"
         case rolloutPath = "rollout_path"
     }
 }

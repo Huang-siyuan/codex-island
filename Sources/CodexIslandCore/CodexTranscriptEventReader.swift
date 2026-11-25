@@ -31,6 +31,7 @@ final class CodexTranscriptEventReader {
     }
 
     private struct TranscriptState {
+        var lastCompletion: CodexLogEvent?
         var lifecycle: CodexLogEvent?
         var requests: [String: InputRequest] = [:]
 
@@ -41,6 +42,7 @@ final class CodexTranscriptEventReader {
         mutating func apply(_ update: Update) {
             switch update {
             case .lifecycle(let event):
+                if event.kind == .taskCompleted { lastCompletion = event }
                 lifecycle = event
                 requests.removeAll()
             case .request(let id, let request):
@@ -83,6 +85,14 @@ final class CodexTranscriptEventReader {
     private let dateFormatter = ISO8601DateFormatter()
 
     func latestEvent(at url: URL, threadID: String) throws -> CodexLogEvent? {
+        try readState(at: url, threadID: threadID).latestEvent
+    }
+
+    func latestCompletion(at url: URL, threadID: String, since start: Date) throws -> CodexLogEvent? {
+        try readState(at: url, threadID: threadID, completionSince: start).lastCompletion
+    }
+
+    private func readState(at url: URL, threadID: String, completionSince: Date? = nil) throws -> TranscriptState {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
         let fileNumber = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
@@ -90,7 +100,7 @@ final class CodexTranscriptEventReader {
         let previous = cursors[url.path]
         if let previous, previous.fileNumber == fileNumber,
            previous.size == size, previous.modifiedAt == modifiedAt {
-            return previous.state.latestEvent
+            return previous.state
         }
 
         let handle = try FileHandle(forReadingFrom: url)
@@ -105,16 +115,16 @@ final class CodexTranscriptEventReader {
         } else {
             // Reconstruct pending requests since the latest task boundary on startup or
             // replacement. Subsequent polls only read appended complete records.
-            (offset, state) = try readLatestRecord(handle: handle, size: size, threadID: threadID)
+            (offset, state) = try readLatestRecord(handle: handle, size: size, threadID: threadID, completionSince: completionSince)
         }
         cursors[url.path] = Cursor(
             fileNumber: fileNumber, size: size, modifiedAt: modifiedAt, offset: offset, state: state
         )
-        return state.latestEvent
+        return state
     }
 
     private func readLatestRecord(
-        handle: FileHandle, size: UInt64, threadID: String
+        handle: FileHandle, size: UInt64, threadID: String, completionSince: Date?
     ) throws -> (UInt64, TranscriptState) {
         var position = size
         var buffer = Data()
@@ -138,7 +148,8 @@ final class CodexTranscriptEventReader {
                 buffer = Data(buffer[..<newline])
                 if let update = parse(line, threadID: threadID) {
                     updates.append(update)
-                    if case .lifecycle = update {
+                    if case .lifecycle(let event) = update,
+                       completionSince == nil || event.kind == .taskCompleted || event.timestamp < (completionSince ?? .distantPast) {
                         return (lastCompleteOffset, replay(updates))
                     }
                 }

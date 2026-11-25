@@ -23,11 +23,16 @@ func renderSubscriptionQuestionAndSettingsInBothLanguagesAndAppearances() throws
     let request = CodexQuestionRequest(threadID: "preview", requestID: .number(1), ownerID: "preview", questions: questions)
     viewModel.applyQuestions([request])
     viewModel.activeQuestionID = request.id
+    let root = IslandRootView(viewModel: viewModel, panelState: IslandPanelState(), displayPreferences: IslandDisplayPreferences())
+    let card = SessionPreview(threadID: "main", title: "Main / 主对话", statusText: "Running", sourceLabel: "Codex",
+                              userPreview: nil, assistantPreview: nil, latestToolSummary: nil, updatedAt: Date(),
+                              isPrimary: true, sideChatCompletions: [.init(id: "side", title: "Review / 检查", timestamp: Date())])
     for language in InterfaceLanguage.allCases {
         defaults.set(language.rawValue, forKey: "interfaceLanguage")
         for appearance in IslandAppearance.allCases {
             defaults.set(appearance.rawValue, forKey: "islandAppearance")
             let pages: [(String, AnyView)] = [
+                ("side-completion", AnyView(root.sessionPreviewCard(card).frame(width: 420).frame(minHeight: 110))),
                 ("quota-question", AnyView(VStack(spacing: 12) {
                     SubscriptionQuotaView(viewModel: viewModel, language: language)
                     CodexQuestionView(viewModel: viewModel, request: request, language: language)

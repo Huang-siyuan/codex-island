@@ -51,6 +51,7 @@ public extension SessionProvider {
 public final class CodexSessionProvider: SessionProvider {
     public let kind: ProviderKind = .codex
 
+    private var monitoredTranscripts: [URL] = []
     private let trackedThreadLimit: Int
     private let transcriptReader = CodexTranscriptEventReader()
     private let monitoringStartedAt: Date
@@ -81,9 +82,12 @@ public final class CodexSessionProvider: SessionProvider {
 
     public func poll() throws -> ProviderPollResult {
         let dataVersion = store.currentDataVersion(
-            transcriptURLs: cachedThreadSnapshots.compactMap { $0.rolloutPath.map { URL(fileURLWithPath: $0) } }
+            transcriptURLs: monitoredTranscripts
         )
-        if hasCachedResult, dataVersion == lastDataVersion {
+        // The title-only index cannot identify child threads. On a transient database
+        // failure keep the last classified list and retry on the next poll.
+        guard !hasCachedResult || dataVersion != lastDataVersion,
+              let family = try? store.fetchThreadFamily(limit: trackedThreadLimit) else {
             return ProviderPollResult(
                 provider: kind,
                 threadSnapshots: cachedThreadSnapshots,
@@ -92,8 +96,23 @@ public final class CodexSessionProvider: SessionProvider {
             )
         }
 
-        let threads = try store.fetchRecentThreads()
-        let trackedThreads = Array(threads.prefix(trackedThreadLimit))
+        var completionsByParent: [String: [SideChatCompletion]] = [:]
+        for side in family {
+            guard let parent = side.mainThreadID, let path = side.rolloutPath,
+                  let completion = try? transcriptReader.latestCompletion(
+                      at: URL(fileURLWithPath: path), threadID: side.threadID, since: monitoringStartedAt
+                  ), completion.timestamp >= monitoringStartedAt else { continue }
+            completionsByParent[parent, default: []].append(
+                SideChatCompletion(id: side.threadID, title: side.title, timestamp: completion.timestamp)
+            )
+        }
+        let trackedThreads = family.filter { $0.mainThreadID == nil }.map { root in
+            var thread = root
+            thread.sideChatCompletions = (completionsByParent[root.threadID] ?? []).sorted {
+                $0.timestamp == $1.timestamp ? $0.id < $1.id : $0.timestamp > $1.timestamp
+            }
+            return thread
+        }
         let afterIDsByThread = trackedThreads.reduce(into: [String: Int64]()) { partialResult, thread in
             partialResult[thread.threadID] = lastSeenLogIDByThread[thread.threadID] ?? 0
         }
@@ -135,12 +154,13 @@ public final class CodexSessionProvider: SessionProvider {
 
         let result = ProviderPollResult(
             provider: kind,
-            threadSnapshots: threads,
+            threadSnapshots: trackedThreads,
             logEvents: logEvents,
             messagePreviews: previews
         )
         lastDataVersion = dataVersion
-        cachedThreadSnapshots = threads
+        cachedThreadSnapshots = trackedThreads
+        monitoredTranscripts = family.compactMap { $0.rolloutPath.map { URL(fileURLWithPath: $0) } }
         hasCachedResult = true
         return result
     }

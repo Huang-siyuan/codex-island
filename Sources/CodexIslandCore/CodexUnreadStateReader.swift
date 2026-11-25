@@ -41,19 +41,12 @@ public final class CodexUnreadStateReader {
               FileManager.default.fileExists(atPath: databaseURL.path) else {
             return nil
         }
-        // Saved unread IDs also contain hidden historical subagent threads. Limit
-        // the join to ordinary conversation sources, including older conversations.
-        // These strings are Codex's persisted protocol values, not display labels.
+        guard !unreadIDs.isEmpty else { return [] }
+        let prefix = try CodexThreadHierarchy.queryPrefix(databaseURL: databaseURL)
         let threads: [LocalThread] = try SQLiteShell().query(
-            databaseURL: databaseURL,
-            query: """
-                select id from threads
-                where archived = 0
-                  and source in ('cli', 'vscode', 'exec', 'appServer')
-                  and coalesce(thread_source, '') not in ('chatgpt_hidden', 'ambient_suggestions');
-                """
+            databaseURL: databaseURL, query: "\(prefix) select id, root_id from family"
         )
-        return unreadIDs.intersection(threads.map(\.id))
+        return Set(threads.filter { unreadIDs.contains($0.id) }.map(\.root_id))
     }
 
     static func unreadThreadIDs(stateData: Data, authData: Data) throws -> Set<String>? {
@@ -110,6 +103,7 @@ public final class CodexUnreadStateReader {
 
 private struct LocalThread: Decodable {
     let id: String
+    let root_id: String
 }
 
 private struct DesktopState: Decodable {
